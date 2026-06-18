@@ -28,9 +28,10 @@ Two subagents support `conceptualization-creation`:
 `diseno-irrumpe` ships a bundled validator at `tools/validar_design_document.py`
 that it runs before every design upsert.
 
-> **Codex note:** the two subagents use the Claude Code agent format and load on
-> Claude Code only. On Codex the skills still run; the conceptualization
-> research/publish steps that delegate to a subagent degrade gracefully.
+> **Codex note:** the two subagents ship in both formats. Claude Code loads
+> `agents/*.md` automatically. For Codex, install the TOML twins from
+> `codex-agents/` (see the Codex install section); the plugin manifest does not
+> distribute subagents on its own.
 
 ## Data access
 
@@ -69,6 +70,18 @@ If the bundled remote MCP server is not picked up automatically, add it to
 ```toml
 [mcp_servers.irrumpe]
 url = "https://mcp.realestodo.com/mcp"
+```
+
+### Codex subagents (optional)
+
+The two conceptualization subagents are provided as Codex custom agents under
+`codex-agents/`. Codex does not load subagents from a plugin, so copy the TOML
+files into your agents directory:
+
+```
+mkdir -p .codex/agents
+cp codex-agents/*.toml .codex/agents/      # project-scoped
+# or: cp codex-agents/*.toml ~/.codex/agents/   # personal
 ```
 
 ## MCP
