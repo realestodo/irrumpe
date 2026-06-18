@@ -1,0 +1,30 @@
+{
+  "name": "irrumpe-os",
+  "version": "0.1.0",
+  "description": "Public Irrumpe skill pack for Codex: creative copywriting, social content, brand strategy, conceptualization, planning and Konva design, wired to the Irrumpe MCP.",
+  "author": {
+    "name": "Irrumpe",
+    "url": "https://irrumpe.realestodo.com"
+  },
+  "homepage": "https://github.com/realestodo/irrumpe",
+  "repository": "https://github.com/realestodo/irrumpe",
+  "license": "MIT",
+  "keywords": [
+    "irrumpe",
+    "skills",
+    "copywriting",
+    "social-media",
+    "strategy",
+    "conceptualization",
+    "planning",
+    "meeting-analysis",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.codex-mcp.json",
+  "interface": {
+    "displayName": "Irrumpe OS",
+    "shortDescription": "Public Irrumpe skills + Irrumpe MCP",
+    "category": "Productivity"
+  }
+}

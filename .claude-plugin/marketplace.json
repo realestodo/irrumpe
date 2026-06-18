@@ -1,0 +1,19 @@
+{
+  "name": "irrumpe-os",
+  "owner": {
+    "name": "Irrumpe",
+    "email": "hola@realestodo.com"
+  },
+  "metadata": {
+    "description": "Public Irrumpe plugin for Claude Code and Codex.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "irrumpe-os",
+      "source": "./",
+      "description": "Public Irrumpe skill pack wired to the Irrumpe MCP (mcp.realestodo.com).",
+      "category": "productivity"
+    }
+  ]
+}
