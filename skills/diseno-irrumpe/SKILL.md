@@ -103,8 +103,9 @@ mal tipo.
    `frame` para recortarla. Aplica el ancla vertical y el interlineado del texto.
 5. **Validar con la herramienta** (`tools/validar_design_document.py`) antes de subir; usa el
    `upsert_arguments` que devuelve.
-6. **Subir media a R2.** Nunca en base64. Sube cada archivo y referencia su URL pública en `src`
-   (ver `references/contratos-mcp.md`). El video usa la ruta que acepta `video/*`.
+6. **Subir media a R2.** Nunca en base64. Sube cada archivo por el staged upload (create → PUT →
+   finalize) y referencia su URL pública en `src` (ver `references/contratos-mcp.md`). Acepta imágenes
+   y video.
 7. **Upsert.** Sube cada página como su item de Brand Center.
 8. **Verificar visualmente.** Renderiza cada página y compárala lado a lado con el original. Corrige
    hasta que coincidan. Recién entonces consideres la página lista.

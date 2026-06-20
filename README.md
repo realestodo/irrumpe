@@ -13,6 +13,7 @@ Public skill pack from **Irrumpe**, installable on both **Claude Code** and **Op
 | `brand-strategy-creation` | Full reasoning for brand strategy. |
 | `conceptualization-creation` | Brand conceptualization: opportunity canvas, creative rationale, core concepts, manifesto. |
 | `planning-creation` | Annual social planning, closing with a publish-ready Irrumpe MCP payload. |
+| `google-ads-expert` | Google Ads Search expert: waste audit, geo and search-term diagnosis, opportunities, RSA and MCP-governed campaign operations. |
 | `diseno-irrumpe` | Create, edit and recreate Konva designs in the Irrumpe editor via MCP; validates the design document before upsert. |
 
 ### Supporting skills and subagents
@@ -20,7 +21,8 @@ Public skill pack from **Irrumpe**, installable on both **Claude Code** and **Op
 The main skills load these bundled reference skills as needed:
 `irrumpe-native-surfaces-creative`, `irrumpe-native-surfaces-social`,
 `content-creation-guide`, `strategy-framework`, `strategy-types`,
-`manifesto-crafting`, `planning-framework`.
+`manifesto-crafting`, `planning-framework`, plus the bundled Google Ads
+references under `google-ads-expert/references/`.
 
 Two subagents support `conceptualization-creation`:
 `investigador-conceptual` (research) and `publicador-conceptual` (persistence).

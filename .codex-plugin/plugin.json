@@ -1,7 +1,7 @@
 {
   "name": "irrumpe-os",
-  "version": "0.1.0",
-  "description": "Public Irrumpe skill pack for Codex: creative copywriting, social content, brand strategy, conceptualization, planning and Konva design, wired to the Irrumpe MCP.",
+  "version": "0.2.0",
+  "description": "Public Irrumpe skill pack for Codex: creative copywriting, social content, brand strategy, conceptualization, planning, Google Ads and Konva design, wired to the Irrumpe MCP.",
   "author": {
     "name": "Irrumpe",
     "url": "https://irrumpe.realestodo.com"
@@ -17,6 +17,8 @@
     "strategy",
     "conceptualization",
     "planning",
+    "google-ads",
+    "paid-search",
     "meeting-analysis",
     "mcp"
   ],

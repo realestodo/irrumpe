@@ -62,31 +62,54 @@ item. Úsalo para retirar versiones obsoletas de una migración sin borrar nada 
 ## 4. Subida de media a R2 — sin base64
 
 Las imágenes y videos deben vivir en una URL pública de R2 (`pipelines.realestodo.com`, CORS `*`) y
-referenciarse en `src` / `fillSpec.src`. **Nunca** se incrustan binarios en el JSON ni pasan por el
-contexto del modelo. Hoy hay dos rutas:
+referenciarse en `src` / `fillSpec.src`. Los binarios nunca se incrustan en el JSON ni pasan por el
+contexto del modelo.
 
-| Ruta | Acepta | Devuelve | Notas |
-|---|---|---|---|
-| `brand-center-file-upload` (edge, multipart) | raster (png/jpeg/webp/gif/avif), svg, pdf, fonts. **Rechaza video.** | `public_url` | API-only. Verifica el tipo por magic bytes. Tiene gate de billing. |
-| `content-media-upload` (edge, multipart) | `image/*` y `video/*` | `public_url` | Es la ruta para video mientras no exista el staged upload por MCP. |
+La ruta principal es el **staged upload por MCP**, modelado en el `stagedUploadsCreate` de Shopify: el
+MCP prefirma y registra; el host sube los bytes directo a R2 con un PUT prefirmado. Acepta imágenes y
+video.
 
-El binario se envía como `multipart/form-data` con `file` + `brand_id` (+ `dimension_key:"design"`,
-`file_role` para brand-center). La respuesta trae `public_url`; esa URL va en la capa.
+| Ruta | Acepta | Notas |
+|---|---|---|
+| **staged upload por MCP** (`brand_center_file_staged_upload_create` + `_finalize`) | raster (png/jpeg/webp/gif/avif), svg, pdf, fonts hasta 100 MB; video mp4/webm/mov hasta 500 MB | Ruta principal. Los bytes van por un PUT prefirmado directo a R2; el MCP solo prefirma y registra. |
+| `brand-center-file-upload` (edge, multipart) | raster, svg, pdf, fonts. Rechaza video. | Ruta de la UI del Brand Center. API-only, multipart, tope de 50 MB en memoria, gate de billing. |
+| `content-media-upload` (edge, multipart) | `image/*`, `video/*` | Ruta de media de documentos nativos. |
 
-### Gap conocido — staged upload por MCP
+### Staged upload por MCP — create → PUT → finalize
 
-Hoy la subida de bytes es por edge function multipart, no hay tool MCP que suba archivos sin base64.
-El objetivo (modelado en el `stagedUploadsCreate` de Shopify) es un par de tools MCP: una crea una
-URL PUT prefirmada de R2 (S3-compat) y devuelve el target; el cliente sube los bytes directo a esa
-URL; una segunda finaliza (verifica el objeto, registra, dispara el mirror). Hasta que exista, la
-subida se hace por las edge functions de arriba.
+Tres pasos. El paso del medio corre en el host (shell); el MCP solo prefirma y registra.
 
-### Patrón operativo de subida masiva (recreación)
+1. **`brand_center_file_staged_upload_create`** — entrega `brand_id`, `dimension_key` (`"design"` para
+   media de un diseño, `"image_bank"` para imágenes de marca, …) y `files[]` con
+   `{ filename, mime_type, byte_size, sha256? }`. Devuelve `staged_targets[]` con `upload_url` (PUT
+   prefirmado), `upload_headers`, `r2_object_key`, `resource_url` (la URL pública final) y `expires_at`
+   (10 min). Hasta 50 archivos por llamada.
+2. **PUT directo a R2** — el host sube los bytes:
+   `curl -X PUT --data-binary @archivo "<upload_url>" -H "Content-Type: <mime>"`. Sin token: la URL ya
+   va firmada (SigV4). El `byte_size` y el `sha256` se sacan en el host (`stat -f%z`, `shasum -a 256`).
+3. **`brand_center_file_staged_upload_finalize`** — entrega `brand_id` y `staged[]` con
+   `{ r2_object_key, item_id?, file_role?, metadata? }`. El backend lee el objeto por streaming,
+   recomputa sha256 + tamaño, re-verifica los magic bytes, registra el archivo y dispara el mirror de
+   svg/pdf. Devuelve `files[]` con `{ file, public_url }` y `rejected[]` por archivo (un mismatch de
+   contenido borra el objeto huérfano). Esa `public_url` va en la capa.
 
-Cuando hay muchos media locales (un export `.pptx`), se sirven por un servidor local con CORS
-permisivo; una pestaña autenticada de Irrumpe los lee y los `POST`ea a la edge function con la sesión
-del usuario, refrescando el token cuando está por expirar. Los bytes nunca tocan el contexto del
-modelo. El resultado es un mapa `{ filename: public_url }` que alimenta el ensamblado.
+Para colgar el archivo de un item, primero `brand_center_item_upsert` y pasa su `brand_center_item_id`
+como `item_id` en `finalize`. Sin `item_id`, el archivo queda suelto en su dimensión y se referencia
+solo por URL (suficiente para el `src` de una capa).
+
+Reglas de seguridad:
+- Nunca leas la sesión del usuario, cookies ni `localStorage` para forzar la subida. El `create` y el
+  `finalize` corren con tu actor del MCP; el PUT usa la URL prefirmada.
+- Los bytes van únicamente por el PUT directo a R2. Prohibido base64 o multipart a través del modelo.
+- En el PUT manda exactamente el `Content-Type` que devolvió `create`.
+
+### Subida masiva (recreación)
+
+Para muchos media locales (un export `.pptx`): saca `byte_size` + `sha256` de cada archivo en el host,
+llama a `create` con el `files[]` completo (batch hasta 50), sube cada uno con `curl` a su `upload_url`,
+y llama a `finalize` con todos los `r2_object_key`. Revisa `rejected[]` y reintenta solo esos. El
+resultado es un mapa `{ filename: public_url }` que alimenta el ensamblado. No hace falta servidor
+local con CORS ni pestaña autenticada del Front.
 
 ## 5. Verificación del render
 
