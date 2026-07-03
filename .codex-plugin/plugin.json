@@ -1,7 +1,7 @@
 {
   "name": "irrumpe-os",
-  "version": "0.2.0",
-  "description": "Public Irrumpe skill pack for Codex: creative copywriting, social content, brand strategy, conceptualization, planning, Google Ads and Konva design, wired to the Irrumpe MCP.",
+  "version": "1.0.0",
+  "description": "Public Irrumpe operator for Codex: one MCP operator skill (content, Konva design, Brand Center, Pulso metrics, ads, projects, tasks, statuses) including the brand onboarding flow.",
   "author": {
     "name": "Irrumpe",
     "url": "https://irrumpe.realestodo.com"
@@ -11,22 +11,26 @@
   "license": "MIT",
   "keywords": [
     "irrumpe",
-    "skills",
-    "copywriting",
-    "social-media",
-    "strategy",
-    "conceptualization",
-    "planning",
+    "mcp",
+    "operator",
+    "onboarding",
+    "brand-center",
+    "konva",
     "google-ads",
-    "paid-search",
-    "meeting-analysis",
-    "mcp"
+    "metrics",
+    "projects",
+    "tasks"
   ],
   "skills": "./skills/",
   "mcpServers": "./.codex-mcp.json",
   "interface": {
     "displayName": "Irrumpe OS",
-    "shortDescription": "Public Irrumpe skills + Irrumpe MCP",
-    "category": "Productivity"
+    "shortDescription": "Irrumpe platform operator + Irrumpe MCP",
+    "category": "Productivity",
+    "defaultPrompt": [
+      "Haz el onboarding de mi marca en Irrumpe",
+      "Muestra las métricas de Pulso de mi marca",
+      "Lista mis tareas pendientes en Irrumpe"
+    ]
   }
 }

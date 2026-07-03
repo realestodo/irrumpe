@@ -1,45 +1,22 @@
 # Irrumpe OS
 
-Public skill pack from **Irrumpe**, installable on both **Claude Code** and **OpenAI Codex**, wired to the Irrumpe MCP for real collaboration on brand data.
+Public operator plugin for the [Irrumpe](https://irrumpe.realestodo.com) platform, for **Claude
+Code** and **OpenAI Codex**. It ships one skill and one command, both wired to the Irrumpe remote
+MCP (`https://mcp.realestodo.com/mcp`, OAuth with your Irrumpe account):
 
-> This repository is a compiled, published artifact. Source of truth and maintenance live in the private Irrumpe repository. All data access goes through the Irrumpe MCP — these skills never touch any internal data source directly.
+- **`irrumpe-operator`** — operates the platform through the MCP: edit content and documents,
+  approve or reject work (status transitions), create and edit Konva designs, upload and query
+  Brand Center assets, read Pulso performance metrics, operate Google Ads campaigns (typed writes
+  with explicit dry-run), send briefs, create projects, and manage tasks and document statuses. It
+  performs zero creative work: it knows the tool contracts, where each piece of data lives, and the
+  guardrails that protect every write.
+- **`/onboarding`** — conversational brand onboarding: the 6-stage Mapa Irrumpe questionnaire with
+  help subquestions, required-answer and length gates, the 45-statement emotion matrix, and
+  submission for human review. It respects platform permissions (brand slots, linked brands) and
+  verifies the MCP connection before starting, repairing the wiring when the environment allows it.
 
-## Main skills
-
-| Skill | Purpose |
-| --- | --- |
-| `creative-copywriter` | Expert creative copywriting with a genuinely human voice. |
-| `content-creation` | Build publishable social-media content briefs in short execution windows. |
-| `brand-strategy-creation` | Full reasoning for brand strategy. |
-| `conceptualization-creation` | Brand conceptualization: opportunity canvas, creative rationale, core concepts, manifesto. |
-| `planning-creation` | Annual social planning, closing with a publish-ready Irrumpe MCP payload. |
-| `google-ads-expert` | Google Ads Search expert: waste audit, geo and search-term diagnosis, opportunities, RSA and MCP-governed campaign operations. |
-| `diseno-irrumpe` | Create, edit and recreate Konva designs in the Irrumpe editor via MCP; validates the design document before upsert. |
-
-### Supporting skills and subagents
-
-The main skills load these bundled reference skills as needed:
-`irrumpe-native-surfaces-creative`, `irrumpe-native-surfaces-social`,
-`content-creation-guide`, `strategy-framework`, `strategy-types`,
-`manifesto-crafting`, `planning-framework`, plus the bundled Google Ads
-references under `google-ads-expert/references/`.
-
-Two subagents support `conceptualization-creation`:
-`investigador-conceptual` (research) and `publicador-conceptual` (persistence).
-
-`diseno-irrumpe` ships a bundled validator at `tools/validar_design_document.py`
-that it runs before every design upsert.
-
-> **Codex note:** the two subagents ship in both formats. Claude Code loads
-> `agents/*.md` automatically. For Codex, install the TOML twins from
-> `codex-agents/` (see the Codex install section); the plugin manifest does not
-> distribute subagents on its own.
-
-## Data access
-
-All skills resolve brand data through the **Irrumpe MCP** at
-`https://mcp.realestodo.com/mcp`. Using it requires authenticating with an
-Irrumpe account (OAuth). The skills carry no internal IDs or data-source maps.
+> This repository is a published artifact. Source of truth lives in the private Irrumpe repository;
+> changes arrive through its publish pipeline.
 
 ## Install — Claude Code
 
@@ -48,47 +25,40 @@ Irrumpe account (OAuth). The skills carry no internal IDs or data-source maps.
 /plugin install irrumpe-os@irrumpe-os
 ```
 
-Then connect the MCP server and complete the OAuth flow:
+The plugin registers the Irrumpe MCP automatically (`.mcp.json`). Authenticate with `/mcp` → select
+`irrumpe` → OAuth with your Irrumpe account. Then run `/onboarding` or just ask for platform
+operations in natural language.
 
-```
-/mcp
-```
-
-## Install — OpenAI Codex
+## Install — Codex
 
 ```
 codex plugin marketplace add realestodo/irrumpe
-```
-
-Install `irrumpe-os` from the plugin directory, then authenticate the MCP server:
-
-```
+codex plugin install irrumpe-os
 codex mcp login irrumpe
 ```
 
-If the bundled remote MCP server is not picked up automatically, add it to
-`~/.codex/config.toml`:
+Codex plugins load skills and MCP wiring (`.codex-mcp.json`); slash commands are a Claude Code
+surface. On Codex, trigger the onboarding by prompt — for example: *"Haz el onboarding de mi marca
+en Irrumpe"*. The skill routes the full flow.
 
-```toml
-[mcp_servers.irrumpe]
-url = "https://mcp.realestodo.com/mcp"
-```
+## What the operator enforces
 
-### Codex subagents (optional)
+- Write access resolved from capability flags (`can_edit`, `can_manage_*`), never from role labels.
+  Denied writes are reported with the missing permission; a write that succeeds when flags said it
+  should fail is reported as a possible platform permission fault.
+- Design documents validate through `tools/validar_design_document.py` before every upsert; the
+  upsert uses the returned arguments verbatim.
+- Ads changes preview with `dry_run: true` and apply only with your confirmation; `pre_revision` is
+  a valid outcome pending human review.
+- Media travels by staged upload to R2 or server-side URL import; never as base64 through the model.
+- Onboarding submission requires your explicit confirmation, and personality assignment stays with
+  the human review team.
 
-The two conceptualization subagents are provided as Codex custom agents under
-`codex-agents/`. Codex does not load subagents from a plugin, so copy the TOML
-files into your agents directory:
+## Requirements
 
-```
-mkdir -p .codex/agents
-cp codex-agents/*.toml .codex/agents/      # project-scoped
-# or: cp codex-agents/*.toml ~/.codex/agents/   # personal
-```
+- An Irrumpe account (the MCP authenticates via OAuth).
+- Python 3 available on the host for the design validator.
 
-## MCP
+## License
 
-| Client | Transport config | Auth |
-| --- | --- | --- |
-| Claude Code | `.mcp.json` → `type: "http"`, `url` | `/mcp` connect + OAuth |
-| Codex | `.codex-mcp.json` → `url` | `codex mcp login irrumpe` |
+MIT — see [LICENSE](./LICENSE).

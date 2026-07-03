@@ -5,14 +5,14 @@
     "email": "hola@realestodo.com"
   },
   "metadata": {
-    "description": "Public Irrumpe plugin for Claude Code and Codex.",
-    "version": "0.2.0"
+    "description": "Public Irrumpe operator plugin for Claude Code and Codex.",
+    "version": "1.0.0"
   },
   "plugins": [
     {
       "name": "irrumpe-os",
       "source": "./",
-      "description": "Public Irrumpe skill pack wired to the Irrumpe MCP (mcp.realestodo.com).",
+      "description": "Irrumpe platform operator wired to the Irrumpe MCP (mcp.realestodo.com): one operator skill plus a brand onboarding command.",
       "category": "productivity"
     }
   ]
