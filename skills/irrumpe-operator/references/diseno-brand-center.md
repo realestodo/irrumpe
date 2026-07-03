@@ -62,6 +62,14 @@ Reglas:
 - **Documento inválido = no se sube.** Si la herramienta reporta errores, corrige el documento antes
   de intentar el upsert. Revisa también las advertencias (`media://` sin resolver, datos de chart no
   positivos, fuentes sin stack de fallback).
+- **Lint de layout (`LAYOUT_*`).** La herramienta también audita la geometría del documento y
+  advierte: elementos que sobresalen de su frame (`LAYOUT_OUT_OF_FRAME`), capas raíz fuera de todo
+  artboard, bordes casi alineados a 1–6 px de la línea que comparten sus hermanos
+  (`LAYOUT_NEAR_ALIGNED`), ritmos verticales casi parejos (`LAYOUT_IRREGULAR_SPACING`), textos que
+  se pisan (`LAYOUT_TEXT_OVERLAP`, con alturas estimadas) y texto de bajo contraste contra el fondo
+  sólido que tiene debajo (`LAYOUT_LOW_CONTRAST`). Son advertencias: corrige cada una o justifícala
+  ante el usuario como decisión de diseño (badges rotados y fondos full-bleed ya están exentos).
+  `--no-layout-lint` las silencia cuando el encargo las acepta de forma explícita.
 - **Gotcha de autoguardado:** si el editor está abierto en ese item, su autoguardado pisa el upsert.
   Re-sube con el editor cerrado en ese item.
 - Handoff al usuario: `https://irrumpe.realestodo.com/brand/<brandId>/designer?item=<itemId>`.

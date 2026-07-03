@@ -41,9 +41,13 @@ import json
 import math
 import re
 import sys
+from collections import Counter
 from typing import Any
 
 CONTRACT_VERSION = "1"
+
+# Version of the deterministic layout lint (geometry-only, warnings-only).
+LAYOUT_LINT_VERSION = "1"
 
 # parseEditorDocument pins this exact value; any other version returns null (corrupt).
 DOCUMENT_VERSION = 1
@@ -321,6 +325,334 @@ def _validate_chart_data(report: Report, layer: dict, path: str, ltype: str) -> 
                     "all values are <= 0 — the chart renders as a neutral empty-state", ltype)
 
 
+# ---- layout lint (geometry-only, warnings-only) ----------------------------------
+#
+# The model composing a document remotely has no eyes: it cannot see a 3px
+# misalignment, an element poking out of the artboard, or white text on a white
+# card. All of that IS computable from the document's absolute geometry, so this
+# section lints it deterministically. Every finding is a WARNING (never an error):
+# rotated "intervention" elements (price badges, washi strips) and deliberate
+# overflow are legitimate design, and warnings never block human curation.
+#
+# Exemptions by design:
+#   - layers with rotation != 0 are skipped by alignment/spacing/overlap checks
+#     (bounds are still checked via their rotated AABB);
+#   - a child covering >= FULL_BLEED_COVERAGE of its frame is a background and is
+#     exempt from the out-of-frame check;
+#   - invisible layers and zero-opacity layers are skipped entirely.
+#
+# Text height is an ESTIMATE (average glyph width ~= 0.55 * fontSize); messages
+# say so. True text metrics require the real font — that is the server-side
+# render's job, out of scope here.
+
+_LINT_EQ_EPS = 0.75          # values closer than this count as "the same edge"
+_LINT_EDGE_TOL = 6.0         # max offset from an anchor edge to call it "almost aligned"
+_LINT_BOUNDS_TOL = 1.0       # slack before reporting an out-of-frame overflow (px)
+_LINT_FULL_BLEED = 0.97      # frame-coverage ratio that marks a background layer
+_LINT_GAP_SPREAD_MIN = 1.5   # gap spread below this is treated as already even
+_LINT_GAP_SPREAD_MAX = 8.0   # gap spread above this reads as intentional rhythm
+_LINT_GAP_CHAIN_BREAK = 300  # a gap larger than this breaks a vertical stack chain
+_LINT_MIN_CONTRAST = 2.0     # WCAG ratio below this is flagged (4.5 is the AA bar)
+_LINT_AVG_GLYPH_RATIO = 0.55  # estimated average glyph width as a fontSize fraction
+
+
+def _lint_layer_visible(layer: dict) -> bool:
+    if layer.get("visible") is False:
+        return False
+    opacity = layer.get("opacity")
+    return not (_is_finite_number(opacity) and opacity <= 0)
+
+
+def _estimated_text_height(layer: dict) -> float:
+    font_size = float(layer.get("fontSize", 0))
+    width = float(layer.get("width", 0))
+    line_height = layer.get("lineHeight")
+    lh = float(line_height) if _is_finite_number(line_height) and line_height > 0 else 1.2
+    text = layer.get("text") or ""
+    chars_per_line = max(1, int(width / max(1.0, _LINT_AVG_GLYPH_RATIO * font_size)))
+    lines = 0
+    for raw_line in text.split("\n"):
+        lines += max(1, math.ceil(len(raw_line) / chars_per_line))
+    return max(font_size * lh, lines * font_size * lh)
+
+
+def _layer_size(layer: dict) -> "tuple[float, float] | None":
+    """Unrotated (width, height) of a layer, estimating text height."""
+    ltype = layer.get("type")
+    if ltype == "ellipse":
+        return float(layer["radiusX"]) * 2, float(layer["radiusY"]) * 2
+    if ltype == "text":
+        return float(layer["width"]), _estimated_text_height(layer)
+    if ltype in ("frame", "rect", "image", "video", "lottie", "icon", "shape", "table", "chart"):
+        return float(layer["width"]), float(layer["height"])
+    return None
+
+
+def _layer_aabb(layer: dict) -> "tuple[float, float, float, float] | None":
+    """Axis-aligned bounding box (x0, y0, x1, y1); rotation pivots on (x, y)."""
+    size = _layer_size(layer)
+    if size is None:
+        return None
+    x, y = float(layer["x"]), float(layer["y"])
+    w, h = size
+    rotation = float(layer.get("rotation") or 0) % 360.0
+    if rotation == 0:
+        return x, y, x + w, y + h
+    rad = math.radians(rotation)
+    cos_r, sin_r = math.cos(rad), math.sin(rad)
+    xs, ys = [], []
+    for dx, dy in ((0.0, 0.0), (w, 0.0), (0.0, h), (w, h)):
+        xs.append(x + dx * cos_r - dy * sin_r)
+        ys.append(y + dx * sin_r + dy * cos_r)
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _aabb_intersection_area(a: "tuple[float, float, float, float]",
+                            b: "tuple[float, float, float, float]") -> float:
+    w = min(a[2], b[2]) - max(a[0], b[0])
+    h = min(a[3], b[3]) - max(a[1], b[1])
+    return w * h if w > 0 and h > 0 else 0.0
+
+
+def _lint_name(layer: dict) -> str:
+    return f"'{layer.get('name')}' (id={layer.get('id')})"
+
+
+def _parse_hex_color(value: Any) -> "tuple[float, float, float] | None":
+    """Returns (r, g, b) in 0..255 for opaque #rgb/#rrggbb/#rrggbbaa colors."""
+    if not _is_string(value):
+        return None
+    m = re.fullmatch(r"#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})", value)
+    if not m:
+        return None
+    digits = m.group(1)
+    if len(digits) == 3:
+        digits = "".join(ch * 2 for ch in digits)
+    if len(digits) == 8:
+        if int(digits[6:8], 16) < 255:
+            return None  # translucent — the effective color depends on what is behind
+        digits = digits[:6]
+    return tuple(int(digits[i:i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
+
+
+def _relative_luminance(rgb: "tuple[float, float, float]") -> float:
+    def channel(c: float) -> float:
+        c /= 255.0
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (channel(c) for c in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast_ratio(fg: "tuple[float, float, float]", bg: "tuple[float, float, float]") -> float:
+    l1, l2 = _relative_luminance(fg), _relative_luminance(bg)
+    lighter, darker = max(l1, l2), min(l1, l2)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def _lint_out_of_frame(report: Report, page: dict, path: str) -> None:
+    layers = page["layers"]
+    frames = {l["id"]: l for l in layers
+              if _is_record(l) and l.get("type") == "frame" and _is_string(l.get("id"))}
+    frame_boxes = {fid: _layer_aabb(f) for fid, f in frames.items()}
+    for i, layer in enumerate(layers):
+        if not _is_record(layer) or layer.get("type") == "frame" or not _lint_layer_visible(layer):
+            continue
+        box = _layer_aabb(layer)
+        if box is None:
+            continue
+        parent = layer.get("parentId")
+        if parent in frame_boxes and frame_boxes[parent] is not None:
+            fbox = frame_boxes[parent]
+            frame_area = (fbox[2] - fbox[0]) * (fbox[3] - fbox[1])
+            coverage = _aabb_intersection_area(box, fbox) / frame_area if frame_area > 0 else 0.0
+            if coverage >= _LINT_FULL_BLEED:
+                continue  # full-bleed background
+            overflow = max(fbox[0] - box[0], fbox[1] - box[1], box[2] - fbox[2], box[3] - fbox[3])
+            if overflow > _LINT_BOUNDS_TOL:
+                report.warn(
+                    f"{path}.layers[{i}]", "LAYOUT_OUT_OF_FRAME",
+                    f"{_lint_name(layer)} extends {overflow:.0f}px beyond its clipping frame "
+                    f"'{frames[parent].get('name')}' — it will render cut off",
+                    layer.get("type"),
+                )
+        elif parent is None and frame_boxes:
+            if all(fb is None or _aabb_intersection_area(box, fb) == 0.0
+                   for fb in frame_boxes.values()):
+                report.warn(
+                    f"{path}.layers[{i}]", "LAYOUT_ROOT_OUTSIDE_ARTBOARD",
+                    f"{_lint_name(layer)} does not intersect any frame — it will be "
+                    "outside every exported artboard",
+                    layer.get("type"),
+                )
+
+
+def _lint_groups(page: dict) -> "dict[Any, list[tuple[int, dict, tuple[float, float, float, float]]]]":
+    """Non-frame, visible, unrotated layers grouped by parentId, with their AABBs."""
+    groups: dict[Any, list] = {}
+    for i, layer in enumerate(page["layers"]):
+        if not _is_record(layer) or layer.get("type") == "frame":
+            continue
+        if not _lint_layer_visible(layer):
+            continue
+        if float(layer.get("rotation") or 0) % 360.0 != 0:
+            continue  # rotated elements are deliberate interventions — skip
+        box = _layer_aabb(layer)
+        if box is None:
+            continue
+        groups.setdefault(layer.get("parentId"), []).append((i, layer, box))
+    return groups
+
+
+def _lint_near_alignment(report: Report, page: dict, path: str) -> None:
+    for members in _lint_groups(page).values():
+        if len(members) < 3:
+            continue  # too few siblings to infer an intended shared edge
+        edge_kinds = {
+            "x": [("left", lambda b: b[0]), ("centerX", lambda b: (b[0] + b[2]) / 2),
+                  ("right", lambda b: b[2])],
+            "y": [("top", lambda b: b[1]), ("centerY", lambda b: (b[1] + b[3]) / 2),
+                  ("bottom", lambda b: b[3])],
+        }
+        for axis, kinds in edge_kinds.items():
+            flagged: set = set()
+            for kind, getter in kinds:
+                values = sorted(((getter(box), i, layer) for i, layer, box in members),
+                                key=lambda t: t[0])
+                cluster: list = []
+                for entry in values + [(math.inf, -1, {})]:  # sentinel flushes the last cluster
+                    if cluster and entry[0] - cluster[-1][0] > _LINT_EDGE_TOL:
+                        _flush_alignment_cluster(report, path, axis, kind, cluster, flagged)
+                        cluster = []
+                    cluster.append(entry)
+                # (sentinel remains in `cluster`; it never forms a cluster of 2+ real edges)
+
+
+def _flush_alignment_cluster(report: Report, path: str, axis: str, kind: str,
+                             cluster: list, flagged: set) -> None:
+    real = [c for c in cluster if c[1] >= 0]
+    if len(real) < 3:
+        return
+    # Anchor = a coordinate genuinely shared by >= 2 layers; outliers sit 1..6px off it.
+    rounded = Counter(round(v * 2) / 2 for v, _, _ in real)
+    anchor, count = rounded.most_common(1)[0]
+    if count < 2:
+        return
+    for value, idx, layer in real:
+        offset = abs(value - anchor)
+        if _LINT_EQ_EPS < offset <= _LINT_EDGE_TOL and idx not in flagged:
+            flagged.add(idx)
+            report.warn(
+                f"{path}.layers[{idx}]", "LAYOUT_NEAR_ALIGNED",
+                f"{_lint_name(layer)} {kind} edge is {offset:.1f}px off the {kind} line "
+                f"shared by {count} sibling(s) at {anchor:g} — snap it if the alignment "
+                "is intended",
+                layer.get("type"),
+            )
+
+
+def _lint_vertical_rhythm(report: Report, page: dict, path: str) -> None:
+    for members in _lint_groups(page).values():
+        stack = sorted(members, key=lambda t: t[2][1])  # by top edge
+        gaps: list = []
+        for (i_a, la, a), (i_b, lb, b) in zip(stack, stack[1:]):
+            h_overlap = min(a[2], b[2]) - max(a[0], b[0])
+            min_width = min(a[2] - a[0], b[2] - b[0])
+            gap = b[1] - a[3]
+            if min_width <= 0 or h_overlap / min_width < 0.5 or not (0 < gap <= _LINT_GAP_CHAIN_BREAK):
+                if len(gaps) >= 3:
+                    _flush_rhythm(report, path, gaps)
+                gaps = []
+                continue
+            gaps.append((gap, i_b, lb))
+        if len(gaps) >= 3:
+            _flush_rhythm(report, path, gaps)
+
+
+def _flush_rhythm(report: Report, path: str, gaps: list) -> None:
+    values = [g for g, _, _ in gaps]
+    spread = max(values) - min(values)
+    if _LINT_GAP_SPREAD_MIN < spread <= _LINT_GAP_SPREAD_MAX:
+        median = sorted(values)[len(values) // 2]
+        names = ", ".join(_lint_name(layer) for _, _, layer in gaps)
+        report.warn(
+            path + ".layers", "LAYOUT_IRREGULAR_SPACING",
+            f"a vertical stack has almost-even gaps ({', '.join(f'{v:.0f}px' for v in values)}) "
+            f"— equalize to {median:.0f}px if even rhythm is intended (stack: {names})",
+        )
+
+
+def _lint_text_overlap(report: Report, page: dict, path: str) -> None:
+    for members in _lint_groups(page).values():
+        texts = [(i, l, b) for i, l, b in members if l.get("type") == "text"]
+        for a_pos in range(len(texts)):
+            for b_pos in range(a_pos + 1, len(texts)):
+                i_a, la, a = texts[a_pos]
+                i_b, lb, b = texts[b_pos]
+                # Shrink both estimated boxes 10% so borderline touches stay quiet.
+                shrunk = []
+                for box in (a, b):
+                    dx = (box[2] - box[0]) * 0.05
+                    dy = (box[3] - box[1]) * 0.05
+                    shrunk.append((box[0] + dx, box[1] + dy, box[2] - dx, box[3] - dy))
+                if _aabb_intersection_area(shrunk[0], shrunk[1]) > 0:
+                    report.warn(
+                        f"{path}.layers[{i_b}]", "LAYOUT_TEXT_OVERLAP",
+                        f"{_lint_name(lb)} overlaps {_lint_name(la)} (text heights are "
+                        "estimated) — verify they do not collide when rendered",
+                        "text",
+                    )
+
+
+def _lint_text_contrast(report: Report, page: dict, path: str) -> None:
+    layers = page["layers"]
+    boxes = [(_layer_aabb(l) if _is_record(l) else None) for l in layers]
+    for i, layer in enumerate(layers):
+        if not _is_record(layer) or layer.get("type") != "text" or not _lint_layer_visible(layer):
+            continue
+        fg = _parse_hex_color(layer.get("fill"))
+        box = boxes[i]
+        if fg is None or box is None:
+            continue
+        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        background = None
+        for j in range(i - 1, -1, -1):  # walk down the z-order
+            candidate = layers[j]
+            if not _is_record(candidate) or not _lint_layer_visible(candidate):
+                continue
+            if candidate.get("type") not in ("frame", "rect", "ellipse"):
+                continue
+            if candidate.get("fillSpec") is not None:
+                break  # gradient/image under the text: contrast is unknowable here
+            cbox = boxes[j]
+            if cbox is None or not (cbox[0] <= cx <= cbox[2] and cbox[1] <= cy <= cbox[3]):
+                continue
+            background = _parse_hex_color(candidate.get("fill"))
+            break  # topmost solid layer under the text decides
+        if background is None:
+            continue
+        ratio = _contrast_ratio(fg, background)
+        if ratio < _LINT_MIN_CONTRAST:
+            report.warn(
+                f"{path}.layers[{i}]", "LAYOUT_LOW_CONTRAST",
+                f"{_lint_name(layer)} has contrast {ratio:.2f}:1 against the solid layer "
+                f"beneath it — likely unreadable (WCAG AA asks 4.5:1)",
+                "text",
+            )
+
+
+def lint_layout(report: Report, document: dict) -> None:
+    """Runs geometry-only layout checks. Requires a structurally valid document."""
+    for p, page in enumerate(document.get("pages", [])):
+        if not _is_record(page) or not isinstance(page.get("layers"), list):
+            continue
+        path = f"$.pages[{p}]"
+        _lint_out_of_frame(report, page, path)
+        _lint_near_alignment(report, page, path)
+        _lint_vertical_rhythm(report, page, path)
+        _lint_text_overlap(report, page, path)
+        _lint_text_contrast(report, page, path)
+
+
 # ---- page + document validation --------------------------------------------------
 
 def _validate_page(report: Report, page: Any, path: str) -> None:
@@ -349,8 +681,9 @@ def _validate_page(report: Report, page: Any, path: str) -> None:
         _validate_layer(report, layer, f"{path}.layers[{i}]")
 
 
-def validate_design_document(document: Any) -> Report:
-    """Validates an EditorDocument against parseEditorDocument's exact contract."""
+def validate_design_document(document: Any, layout_lint: bool = True) -> Report:
+    """Validates an EditorDocument against parseEditorDocument's exact contract,
+    then (when structurally valid) runs the geometry-only layout lint."""
     report = Report()
     if not _is_record(document):
         report.error("$", "DOCUMENT_NOT_OBJECT", "object", document)
@@ -365,6 +698,9 @@ def validate_design_document(document: Any) -> Report:
         report.warn("$.pages", "NO_PAGES", "document has no pages")
     for i, page in enumerate(pages):
         _validate_page(report, page, f"$.pages[{i}]")
+    # Geometry math needs valid fields; lint only what will actually hydrate.
+    if layout_lint and not report.errors:
+        lint_layout(report, document)
     return report
 
 
@@ -442,6 +778,8 @@ def main(argv: list[str]) -> int:
     group.add_argument("--cover-fit-all", dest="cover_fit_all", action="store_true")
     parser.add_argument("--strict-optional", action="store_true",
                         help="treat warnings as failures (exit 1)")
+    parser.add_argument("--no-layout-lint", dest="layout_lint", action="store_false",
+                        help="skip the geometry layout lint (LAYOUT_* warnings)")
     parser.add_argument("--self-test", action="store_true",
                         help="run the embedded golden fixtures and exit")
     args = parser.parse_args(argv)
@@ -458,12 +796,13 @@ def main(argv: list[str]) -> int:
         print(json.dumps({"valid": False, "io_error": str(exc)}, ensure_ascii=False))
         return 2
 
-    report = validate_design_document(document)
+    report = validate_design_document(document, layout_lint=args.layout_lint)
     failed = bool(report.errors) or (args.strict_optional and bool(report.warnings))
 
     if failed and report.errors:
         print(json.dumps({
             "contract_version": CONTRACT_VERSION,
+            "layout_lint_version": LAYOUT_LINT_VERSION if args.layout_lint else None,
             "valid": False,
             "errors": report.errors,
             "warnings": report.warnings,
@@ -472,6 +811,7 @@ def main(argv: list[str]) -> int:
 
     result: dict[str, Any] = {
         "contract_version": CONTRACT_VERSION,
+        "layout_lint_version": LAYOUT_LINT_VERSION if args.layout_lint else None,
         "valid": not failed,
         "warnings": report.warnings,
     }
@@ -577,6 +917,87 @@ def _run_self_test() -> int:
     media_report = validate_design_document(media_doc)
     if not any(w["code"] == "SRC_PLACEHOLDER" for w in media_report.warnings):
         failures.append("media:// src did not raise SRC_PLACEHOLDER warning")
+
+    # ---- layout lint fixtures (all warnings-only: documents stay VALID) ----------
+
+    def _lint_codes(doc: Any) -> "set[str]":
+        rep = validate_design_document(doc)
+        if rep.errors:
+            failures.append(f"lint fixture unexpectedly invalid: {rep.errors}")
+        return {w["code"] for w in rep.warnings}
+
+    def _page(*layers: dict) -> dict[str, Any]:
+        return {"version": 1, "pages": [{"id": "p1", "name": "p", "layers": list(layers)}]}
+
+    frame = _base_layer("frame", id="f1", width=1080, height=1920, fill="#ffffff")
+
+    # 1. Child poking out of its clipping frame warns; a full-bleed child stays quiet.
+    poking = _base_layer("rect", id="r1", parentId="f1", x=1000, y=100,
+                         width=300, height=100, fill="#000000")
+    codes = _lint_codes(_page(frame, poking))
+    if "LAYOUT_OUT_OF_FRAME" not in codes:
+        failures.append("out-of-frame child did not raise LAYOUT_OUT_OF_FRAME")
+    full_bleed = _base_layer("image", id="bg", parentId="f1", x=-20, y=-20,
+                             src="https://cdn.example/bg.jpg", width=1120, height=1960)
+    codes = _lint_codes(_page(frame, full_bleed))
+    if "LAYOUT_OUT_OF_FRAME" in codes:
+        failures.append("full-bleed background wrongly raised LAYOUT_OUT_OF_FRAME")
+
+    # 2. A rotated overflowing badge is an intervention: bounds still checked, but a
+    #    rotated layer must stay exempt from alignment checks (fixture 3 covers those).
+    codes = _lint_codes(_page(frame, _base_layer(
+        "rect", id="rot", parentId="f1", x=100, y=100, rotation=25,
+        width=200, height=80, fill="#000000")))
+    if "LAYOUT_NEAR_ALIGNED" in codes:
+        failures.append("rotated layer wrongly entered alignment checks")
+
+    # 3. Two rects sharing left=100 plus one at 103 → near-alignment warning.
+    codes = _lint_codes(_page(
+        frame,
+        _base_layer("rect", id="a", parentId="f1", x=100, y=100, width=200, height=50, fill="#111111"),
+        _base_layer("rect", id="b", parentId="f1", x=100, y=300, width=200, height=50, fill="#111111"),
+        _base_layer("rect", id="c", parentId="f1", x=103, y=500, width=200, height=50, fill="#111111"),
+    ))
+    if "LAYOUT_NEAR_ALIGNED" not in codes:
+        failures.append("3px-off sibling did not raise LAYOUT_NEAR_ALIGNED")
+
+    # 4. Almost-even vertical gaps (60, 63, 58) → rhythm warning.
+    stack = [_base_layer("rect", id=f"s{i}", parentId="f1", x=100, y=y,
+                         width=400, height=40, fill="#222222")
+             for i, y in enumerate([100, 200, 303, 401])]  # gaps: 60, 63, 58
+    codes = _lint_codes(_page(frame, *stack))
+    if "LAYOUT_IRREGULAR_SPACING" not in codes:
+        failures.append("almost-even gaps did not raise LAYOUT_IRREGULAR_SPACING")
+
+    # 5. Two overlapping text boxes → overlap warning.
+    codes = _lint_codes(_page(
+        frame,
+        _base_layer("text", id="t1", parentId="f1", x=100, y=100, text="Titular grande",
+                    fontSize=60, fill="#111111", width=500, fontFamily='"B", sans-serif'),
+        _base_layer("text", id="t2", parentId="f1", x=120, y=120, text="Subtítulo",
+                    fontSize=40, fill="#111111", width=500, fontFamily='"B", sans-serif'),
+    ))
+    if "LAYOUT_TEXT_OVERLAP" not in codes:
+        failures.append("overlapping texts did not raise LAYOUT_TEXT_OVERLAP")
+
+    # 6. Near-white text on a white frame → contrast warning.
+    codes = _lint_codes(_page(
+        frame,
+        _base_layer("text", id="t3", parentId="f1", x=100, y=100, text="Invisible",
+                    fontSize=40, fill="#f4f4f4", width=400, fontFamily='"B", sans-serif'),
+    ))
+    if "LAYOUT_LOW_CONTRAST" not in codes:
+        failures.append("white-on-white text did not raise LAYOUT_LOW_CONTRAST")
+
+    # 7. The canonical valid document must produce ZERO layout warnings (noise guard),
+    #    and --no-layout-lint must silence LAYOUT_* codes entirely.
+    clean_report = validate_design_document(_valid_document())
+    noisy = [w for w in clean_report.warnings if w["code"].startswith("LAYOUT_")]
+    if noisy:
+        failures.append(f"clean document raised layout noise: {noisy}")
+    unlinted = validate_design_document(_page(frame, poking), layout_lint=False)
+    if any(w["code"].startswith("LAYOUT_") for w in unlinted.warnings):
+        failures.append("layout_lint=False still produced LAYOUT_* warnings")
 
     # Layer-type coverage: every known type must have a branch (guards drift).
     covered = LAYER_TYPES

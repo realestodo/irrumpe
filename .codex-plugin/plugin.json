@@ -1,6 +1,6 @@
 {
   "name": "irrumpe-os",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Public Irrumpe operator for Codex: one MCP operator skill (content, Konva design, Brand Center, Pulso metrics, ads, projects, tasks, statuses) including the brand onboarding flow.",
   "author": {
     "name": "Irrumpe",

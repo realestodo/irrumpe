@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Public Irrumpe operator plugin for Claude Code and Codex.",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "plugins": [
     {
