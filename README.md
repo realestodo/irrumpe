@@ -12,11 +12,11 @@ persona:
   y estados de documentos. Mantiene la dirección creativa en la persona usuaria. Traduce documentos
   base, diseños y plantillas aprobados a cargas útiles nativas, respetando los contratos de las
   herramientas y las barreras de escritura.
-- **`brand-onboarding`** — onboarding de marca focalizado y neutral al entorno: resuelve el
-  contrato vivo del MCP antes de entrevistar, captura respuestas obtenidas del catálogo y la matriz
-  emocional de 45 enunciados, permite la revisión y se detiene antes de asignar personalidad o
-  ejecutar narrativa. El onboarding sigue siendo una capacidad del producto, pero este paquete lo
-  bloquea si el MCP no puede confirmar las herramientas y los contratos vigentes requeridos.
+- **`brand-onboarding`** — entrevista que completa la ficha del formulario de onboarding:
+  conduce una pregunta por turno desde el catálogo vivo, profundiza con sus ayudas, guarda las
+  respuestas y recoge la matriz emocional de 45 enunciados en su etapa. Permite revisar y corregir
+  antes de confirmar el envío a revisión humana. Funciona con los permisos de la cuenta conectada,
+  incluida una cuenta administradora; no exige una prueba previa con una cuenta `player`.
 - **`/onboarding`** — adaptador liviano de Claude Code para `brand-onboarding`; no duplica el
   contrato del flujo ni repara la configuración del entorno.
 
@@ -78,9 +78,10 @@ focalizada opera su flujo solo cuando puede confirmar el contrato vivo del MCP.
   acceder a sus bytes. La importación de URL en el servidor se limita a media http(s) para contenido
   y documentos; ninguna ruta envía bytes a través del modelo.
 - El onboarding de marca exige confirmación explícita antes del envío y la asignación de personalidad
-  queda en el equipo de revisión humana. La skill focalizada se detiene si no puede confirmar el
-  catálogo vivo, una herramienta requerida o su contrato; no reemplaza datos faltantes con supuestos
-  locales.
+  queda en el equipo de revisión humana. Guarda mediante parches acotados y comprueba los datos
+  con lecturas posteriores. Respeta las denegaciones y pausa la operación afectada si falta una
+  herramienta, un dato requerido o hay un resultado de escritura incierto. No exige parámetros de
+  revisión o idempotencia que el contrato de guardado no ofrece.
 
 ## Requisitos
 

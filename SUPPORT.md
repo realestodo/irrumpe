@@ -26,8 +26,14 @@ Codex. No sustituyen las URL externas de soporte, privacidad o términos.
   ni infieras su carga útil. La superficie pública del MCP retiró el 31-08-2026 las
   lecturas de cuenta, notificaciones y eliminación de versiones; las lecturas de
   cuenta y acceso vigentes son `get_user_brand_creation_state` y
-  `list_user_accessible_brands`. Un descriptor que anuncie otra cosa es obsoleto y
-  el flujo dependiente debe detenerse.
+  `list_user_accessible_brands`. Usa los descriptores vigentes y pausa sólo la
+  operación que depende de una herramienta ausente o que falla.
+- **La entrevista exige una cuenta `player` o una auditoría previa.** Las versiones
+  hasta `1.2.3` incluían un bloqueo de certificación en la referencia del onboarding.
+  Actualiza a `1.2.4` y abre una conversación nueva. El flujo usa las capacidades
+  de la cuenta conectada; una sesión administradora puede responder la entrevista.
+  Las pruebas con `player` siguen siendo necesarias para acreditar ese perfil en
+  la publicación, pero no son un requisito de uso para todas las personas.
 - **Ocurre una respuesta 403.** Informa el permiso denegado y no reintentes mediante
   una herramienta o una marca alternativas.
 - **Un diseño necesita un upsert pero el entorno no puede ejecutar el validador
@@ -39,7 +45,7 @@ Codex. No sustituyen las URL externas de soporte, privacidad o términos.
 
 ## Estado de publicación
 
-Versión del paquete: `1.2.3`.
+Versión del paquete: `1.2.4`.
 
 Validación local en Claude Code: `claude plugin validate --strict <ruta-del-paquete>`.
 Cuando el paquete se valida desde su propio directorio, ese comando valida primero

@@ -1,5 +1,10 @@
 # Plan de pruebas para revisión
 
+Este plan acredita la publicación y los permisos del perfil de revisión. No es
+un requisito que cada usuario deba ejecutar para usar el onboarding. La entrevista
+opera con las capacidades reales de la cuenta conectada; no se bloquea por tener
+rol `internal_admin` ni por carecer de una certificación previa con `player`.
+
 Estas pruebas cubren el acceso de solo lectura disponible para una cuenta `player`.
 No requieren onboarding ni datos de Ads.
 
