@@ -1,0 +1,27 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "irrumpe-os",
+  "displayName": "Irrumpe OS",
+  "version": "1.2.3",
+  "description": "Operador de Irrumpe para Antigravity: contenido, diseño, Brand Center, Pulso, campañas, proyectos, tareas y onboarding de marca vía MCP.",
+  "author": {
+    "name": "Irrumpe",
+    "url": "https://irrumpe.realestodo.com"
+  },
+  "homepage": "https://irrumpe.realestodo.com",
+  "repository": "https://github.com/realestodo/irrumpe",
+  "license": "MIT",
+  "keywords": [
+    "irrumpe",
+    "mcp",
+    "operator",
+    "onboarding",
+    "brand-center",
+    "konva",
+    "google-ads",
+    "metrics",
+    "projects",
+    "tasks"
+  ],
+  "skills": "./skills/"
+}

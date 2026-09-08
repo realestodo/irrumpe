@@ -5,6 +5,18 @@ documentos ricos, media y briefs. Prosa en español; nombres de tools, campos y 
 
 ---
 
+## Índice
+
+1. [Modelo](#1-modelo)
+2. [Descubrimiento y lectura](#2-descubrimiento-y-lectura)
+3. [Crear y editar contenido](#3-crear-y-editar-contenido)
+4. [Media de contenido y documentos](#4-media-de-contenido-y-documentos)
+5. [Escribir el cuerpo](#5-escribir-el-cuerpo--append_document_blocks)
+6. [Versiones de documento](#6-versiones-de-documento)
+7. [Briefs e items de dominio](#7-briefs-e-items-de-dominio--create_domain_item)
+8. [Hilos sociales](#8-hilos-sociales)
+9. [Verificación posterior a escritura](#9-verificación-posterior-a-escritura)
+
 ## 1. Modelo
 
 Un **contenido** es un item del calendario de la marca con metadata operativa (título, caption,
@@ -93,7 +105,8 @@ primero las tools estructuradas (`content_update`, `task_update`, `project_updat
 
 - `list_document_versions` (`document_id`) — historial visible al usuario.
 - `document_version_restore` (`version_id`) — restaura una versión.
-- `document_version_milestone` — marca un hito; `document_version_delete` — elimina una versión.
+- `document_version_milestone` — marca un hito. No existe eliminación de versiones en la superficie
+  pública del MCP; si alguien la pide, explicar que esa operación no está disponible por esta vía.
 
 ## 7. Briefs e items de dominio — `create_domain_item`
 

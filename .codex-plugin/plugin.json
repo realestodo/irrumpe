@@ -1,12 +1,12 @@
 {
   "name": "irrumpe-os",
-  "version": "1.1.0",
-  "description": "Public Irrumpe operator for Codex: one MCP operator skill (content, Konva design, Brand Center, Pulso metrics, ads, projects, tasks, statuses) including the brand onboarding flow.",
+  "version": "1.2.3",
+  "description": "Operador de Irrumpe para Codex: contenido, diseño, Brand Center, Pulso, campañas, proyectos, tareas y onboarding de marca vía MCP.",
   "author": {
     "name": "Irrumpe",
     "url": "https://irrumpe.realestodo.com"
   },
-  "homepage": "https://github.com/realestodo/irrumpe",
+  "homepage": "https://irrumpe.realestodo.com",
   "repository": "https://github.com/realestodo/irrumpe",
   "license": "MIT",
   "keywords": [
@@ -22,13 +22,18 @@
     "tasks"
   ],
   "skills": "./skills/",
-  "mcpServers": "./.codex-mcp.json",
+  "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Irrumpe OS",
-    "shortDescription": "Irrumpe platform operator + Irrumpe MCP",
+    "shortDescription": "Operador de Irrumpe",
+    "longDescription": "Conecta Irrumpe al MCP para consultar y operar contenido, Brand Center, Pulso, Ads, proyectos, tareas y onboarding según los permisos y contratos vigentes.",
+    "developerName": "Irrumpe",
+    "websiteURL": "https://irrumpe.realestodo.com",
     "category": "Productivity",
+    "composerIcon": "./assets/irrumpe.svg",
+    "logo": "./assets/irrumpe.svg",
     "defaultPrompt": [
-      "Haz el onboarding de mi marca en Irrumpe",
+      "Consulta los assets de Brand Center de mi marca",
       "Muestra las métricas de Pulso de mi marca",
       "Lista mis tareas pendientes en Irrumpe"
     ]

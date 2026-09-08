@@ -1,13 +1,13 @@
 {
   "name": "irrumpe-os",
   "displayName": "Irrumpe OS",
-  "version": "1.1.0",
-  "description": "Public Irrumpe operator for Claude Code: one MCP operator skill (content, Konva design, Brand Center, Pulso metrics, ads, projects, tasks, statuses) plus a brand onboarding command.",
+  "version": "1.2.3",
+  "description": "Operador de Irrumpe para Claude Code: contenido, diseño, Brand Center, Pulso, campañas, proyectos, tareas y comando de onboarding vía MCP.",
   "author": {
     "name": "Irrumpe",
     "url": "https://irrumpe.realestodo.com"
   },
-  "homepage": "https://github.com/realestodo/irrumpe",
+  "homepage": "https://irrumpe.realestodo.com",
   "repository": "https://github.com/realestodo/irrumpe",
   "license": "MIT",
   "keywords": [

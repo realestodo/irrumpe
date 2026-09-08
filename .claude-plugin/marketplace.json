@@ -5,14 +5,17 @@
     "email": "hola@realestodo.com"
   },
   "metadata": {
-    "description": "Public Irrumpe operator plugin for Claude Code and Codex.",
-    "version": "1.1.0"
+    "description": "Plugin de operación de Irrumpe para Claude Code y Codex.",
+    "version": "1.2.3"
   },
   "plugins": [
     {
       "name": "irrumpe-os",
       "source": "./",
-      "description": "Irrumpe platform operator wired to the Irrumpe MCP (mcp.realestodo.com): one operator skill plus a brand onboarding command.",
+      "version": "1.2.3",
+      "homepage": "https://irrumpe.realestodo.com",
+      "repository": "https://github.com/realestodo/irrumpe",
+      "description": "Operador de Irrumpe conectado a su MCP: una skill de operación, onboarding de marca y adaptador de comando para Claude Code.",
       "category": "productivity"
     }
   ]

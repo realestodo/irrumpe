@@ -5,6 +5,16 @@ Brand Center y cómo entran los archivos a R2. Prosa en español; tools, campos 
 
 ---
 
+## Índice
+
+1. [Modelo](#1-modelo)
+2. [Consultar assets](#2-consultar-assets)
+3. [Crear y editar diseños](#3-crear-y-editar-diseños--brand_center_item_upsert)
+4. [Archivar](#4-archivar--brand_center_item_archive)
+5. [Cargar archivos a R2](#5-cargar-archivos-a-r2--staged-upload-sin-base64)
+6. [Guardar outputs generados](#6-guardar-outputs-generados)
+7. [Verificación posterior](#7-verificación-posterior)
+
 ## 1. Modelo
 
 Un **diseño** es un item de Brand Center con `dimension_key: "design"` (o `"template"`), cuyo
@@ -31,13 +41,29 @@ Las búsquedas devuelven resúmenes de metadata; los binarios nunca viajan por e
 
 ## 3. Crear y editar diseños — `brand_center_item_upsert`
 
+### Límite de composición
+
+Componer solo desde uno de estos insumos: un brief explícito aprobado por el usuario, un
+`design_document` existente o un template de Brand Center. Confirmar antes de empezar el formato,
+el contenido, la jerarquía y las restricciones visuales. Si falta una decisión que cambia el
+concepto o el sistema visual, pedirla; esta skill no origina dirección creativa autónoma.
+
 El backend valida solo que `typed_payload` sea un objeto JSON; la validación real de la estructura
 Konva la hace el editor al cargar. Un documento malformado se guarda sin error de API y el editor lo
 bloquea al abrirlo. Por eso la verificación previa con `tools/validar_design_document.py` es
 obligatoria en cada upsert de diseño.
 
-**Flujo:** valida el `design_document` con la herramienta; ella devuelve `upsert_arguments`; pasa ese
-objeto **tal cual** como argumentos de `brand_center_item_upsert`. Armar la envoltura a mano está
+**Resolución de la herramienta:** usar una ruta de paquete que el host exponga. En Claude Code la
+raíz instalada es `${CLAUDE_PLUGIN_ROOT}`, así que la herramienta es
+`${CLAUDE_PLUGIN_ROOT}/tools/validar_design_document.py`. Si el host no expone esa variable pero sí
+la ruta de `SKILL.md` y permite ejecución local, comprobar `../../tools/validar_design_document.py`
+desde esa skill y convertirla a ruta absoluta antes de ejecutar. No buscar `tools/` en el workspace
+del usuario ni suponer otra variable de entorno. Si el host no expone una ruta ejecutable o el
+archivo no existe, no hacer el upsert: pedir validación por una superficie nativa o una validación
+MCP que el runtime confirme equivalente.
+
+**Flujo:** validar el `design_document` con la herramienta; ella devuelve `upsert_arguments`; pasar
+ese objeto **tal cual** como argumentos de `brand_center_item_upsert`. Armar la envoltura a mano está
 prohibido.
 
 Los argumentos del tool son **planos** (sin objeto `payload` envolvente):
@@ -83,9 +109,9 @@ Reglas:
 
 ## 5. Cargar archivos a R2 — staged upload, sin base64
 
-Imágenes, video, fuentes y documentos viven en una URL pública de R2
-(`pipelines.realestodo.com`, CORS `*`). Los binarios nunca se incrustan en JSON ni pasan por el
-contexto del modelo. Tres pasos; el del medio corre en el host (shell):
+Imágenes, video, fuentes y documentos se cargan por una URL prefirmada de R2. Los binarios nunca
+se incrustan en JSON ni pasan por el contexto del modelo. Cuando el host tiene acceso directo al
+archivo y el usuario aprobó esa operación, son tres pasos:
 
 1. **`brand_center_file_staged_upload_create`** — `brand_id`, `dimension_key` (`"design"` para media
    de un diseño, `"image_bank"` para imágenes de marca, …) y `files[]` con
@@ -108,8 +134,12 @@ Para colgar el archivo de un item, primero haz el `brand_center_item_upsert` y p
 dimensión, referenciable solo por URL.
 
 Subida masiva: calcula `byte_size` + `sha256` de todos los archivos en el host, llama a `create` con
-el `files[]` completo, sube cada uno con `curl` y llama a `finalize` con todos los `r2_object_key`.
-Revisa `rejected[]` y reintenta solo esos.
+el `files[]` completo, sube cada uno con un cliente que pueda manejar los bytes y llama a `finalize`
+con todos los `r2_object_key`. Revisa `rejected[]` y reintenta solo esos.
+
+Un host sin acceso directo a los archivos o sin ejecución local no puede realizar el PUT con esta
+skill. No conviertas archivos a base64 ni los pases por el modelo para compensarlo; usa el cargador
+nativo de Irrumpe o una ruta MCP que acepte un adjunto y que el contrato en vivo confirme.
 
 Reglas de seguridad:
 - Nunca leas sesión, cookies ni `localStorage` del usuario para forzar una subida. `create` y

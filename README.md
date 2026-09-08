@@ -1,64 +1,99 @@
 # Irrumpe OS
 
-Public operator plugin for the [Irrumpe](https://irrumpe.realestodo.com) platform, for **Claude
-Code** and **OpenAI Codex**. It ships one skill and one command, both wired to the Irrumpe remote
-MCP (`https://mcp.realestodo.com/mcp`, OAuth with your Irrumpe account):
+Paquete autónomo de operación para la plataforma [Irrumpe](https://irrumpe.realestodo.com), para
+**Claude Code** y **OpenAI Codex**. Incluye dos habilidades y un comando; sus manifiestos declaran el MCP
+remoto de Irrumpe (`https://mcp.realestodo.com/mcp`) y usan OAuth con la cuenta de Irrumpe de la
+persona:
 
-- **`irrumpe-operator`** — operates the platform through the MCP: edit content and documents,
-  approve or reject work (status transitions), create and edit Konva designs, upload and query
-  Brand Center assets, read Pulso performance metrics, operate Google Ads campaigns (typed writes
-  with explicit dry-run), send briefs, create projects, and manage tasks and document statuses. It
-  performs zero creative work: it knows the tool contracts, where each piece of data lives, and the
-  guardrails that protect every write.
-- **`/onboarding`** — conversational brand onboarding: the 6-stage Mapa Irrumpe questionnaire with
-  help subquestions, required-answer and length gates, the 45-statement emotion matrix, and
-  submission for human review. It respects platform permissions (brand slots, linked brands) and
-  verifies the MCP connection before starting, repairing the wiring when the environment allows it.
+- **`irrumpe-operator`** — opera la plataforma mediante el MCP: edita contenido y documentos,
+  aprueba o rechaza trabajo mediante transiciones de estado, crea y edita diseños Konva, carga y
+  consulta recursos de Brand Center, lee métricas de Pulso, opera campañas de Google Ads con
+  escrituras tipadas y `dry_run` explícito, envía documentos base, crea proyectos y administra tareas
+  y estados de documentos. Mantiene la dirección creativa en la persona usuaria. Traduce documentos
+  base, diseños y plantillas aprobados a cargas útiles nativas, respetando los contratos de las
+  herramientas y las barreras de escritura.
+- **`brand-onboarding`** — onboarding de marca focalizado y neutral al entorno: resuelve el
+  contrato vivo del MCP antes de entrevistar, captura respuestas obtenidas del catálogo y la matriz
+  emocional de 45 enunciados, permite la revisión y se detiene antes de asignar personalidad o
+  ejecutar narrativa. El onboarding sigue siendo una capacidad del producto, pero este paquete lo
+  bloquea si el MCP no puede confirmar las herramientas y los contratos vigentes requeridos.
+- **`/onboarding`** — adaptador liviano de Claude Code para `brand-onboarding`; no duplica el
+  contrato del flujo ni repara la configuración del entorno.
 
-> This repository is a published artifact. Source of truth lives in the private Irrumpe repository;
-> changes arrive through its publish pipeline.
+> Este repositorio es un artefacto publicado. La fuente de verdad vive en el repositorio privado de
+> Irrumpe; los cambios llegan mediante su proceso de publicación.
 
-## Install — Claude Code
+## Instalación — Claude Code
 
 ```
 /plugin marketplace add realestodo/irrumpe
 /plugin install irrumpe-os@irrumpe-os
 ```
 
-The plugin registers the Irrumpe MCP automatically (`.mcp.json`). Authenticate with `/mcp` → select
-`irrumpe` → OAuth with your Irrumpe account. Then run `/onboarding` or just ask for platform
-operations in natural language.
+El paquete declara el MCP de Irrumpe en `.mcp.json`. Confirma que el entorno instalado expone un
+servidor `irrumpe` y autentícate mediante su interfaz MCP con tu cuenta de Irrumpe. Ejecuta
+`/onboarding` o solicita operaciones de la plataforma en lenguaje natural solo después de contar
+con esa conexión.
 
-## Install — Codex
+## Instalación — Codex
+
+Para instalar desde un marketplace de Codex configurado, usa:
 
 ```
-codex plugin marketplace add realestodo/irrumpe
-codex plugin install irrumpe-os
+codex plugin add <plugin>@<marketplace>
+```
+
+Este paquete no registra ni publica un marketplace por sí solo.
+
+Para configurar únicamente el MCP remoto en Codex, ejecuta lo siguiente solo después de que la
+persona usuaria haya aprobado el cambio local de configuración y el flujo OAuth:
+
+```
+codex mcp add irrumpe --url https://mcp.realestodo.com/mcp
 codex mcp login irrumpe
 ```
 
-Codex plugins load skills and MCP wiring (`.codex-mcp.json`); slash commands are a Claude Code
-surface. On Codex, trigger the onboarding by prompt — for example: *"Haz el onboarding de mi marca
-en Irrumpe"*. The skill routes the full flow.
+El manifiesto de Codex declara `.mcp.json`; una publicación futura en un marketplace debe
+verificar cómo el entorno aplica esa declaración. Los comandos slash pertenecen a Claude Code. En
+Codex, solicita la operación deseada de la plataforma en lenguaje natural. La habilidad de onboarding
+focalizada opera su flujo solo cuando puede confirmar el contrato vivo del MCP.
 
-## What the operator enforces
+## Lo que exige el operador
 
-- Write access resolved from capability flags (`can_edit`, `can_manage_*`), never from role labels.
-  Denied writes are reported with the missing permission; a write that succeeds when flags said it
-  should fail is reported as a possible platform permission fault.
-- Design documents validate through `tools/validar_design_document.py` before every upsert; the
-  upsert uses the returned arguments verbatim.
-- Ads changes preview with `dry_run: true` and apply only with your confirmation; `pre_revision` is
-  a valid outcome pending human review.
-- Media travels by staged upload to R2 or server-side URL import; never as base64 through the model.
-- Onboarding submission requires your explicit confirmation, and personality assignment stays with
-  the human review team.
+- El acceso de escritura se resuelve mediante indicadores de capacidad (`can_edit`, `can_manage_*`),
+  nunca mediante etiquetas de rol. Las escrituras denegadas informan el permiso faltante; una
+  escritura que se complete cuando los indicadores señalaban que debía fallar se informa como posible falla de
+  permisos de la plataforma.
+- El lenguaje dirigido a la persona usuaria sigue su idioma y registro regional; el texto existente
+  se conserva salvo que solicite reescribirlo.
+- Cuando el entorno expone archivos ejecutables del paquete, los documentos de diseño se validan
+  mediante `tools/validar_design_document.py` antes de cada upsert; el upsert usa literalmente los
+  argumentos devueltos. Un entorno sin esa capacidad no debe crear el diseño mediante este paquete.
+- Los cambios de Ads siguen dependiendo de permisos. Un `dry_run: true` valida sin despachar al
+  proveedor, pero puede crear un registro de acción en Irrumpe, por lo que también exige
+  confirmación. Una solicitud real usa además `dry_run: false`; el operador informa el estado crudo
+  de la acción y sigue las acciones despachadas hasta un resultado terminal antes de consultar las
+  vistas sincronizadas con el proveedor.
+- Los archivos binarios de diseño y Brand Center usan carga escalonada cuando el entorno puede
+  acceder a sus bytes. La importación de URL en el servidor se limita a media http(s) para contenido
+  y documentos; ninguna ruta envía bytes a través del modelo.
+- El onboarding de marca exige confirmación explícita antes del envío y la asignación de personalidad
+  queda en el equipo de revisión humana. La skill focalizada se detiene si no puede confirmar el
+  catálogo vivo, una herramienta requerida o su contrato; no reemplaza datos faltantes con supuestos
+  locales.
 
-## Requirements
+## Requisitos
 
-- An Irrumpe account (the MCP authenticates via OAuth).
-- Python 3 available on the host for the design validator.
+- Una cuenta de Irrumpe, con autenticación OAuth para el MCP.
+- Para upserts de diseño, un entorno que pueda ejecutar el validador incluido desde el paquete
+  instalado. Los flujos de consulta no requieren Python ni acceso al sistema de archivos local.
 
-## License
+## Revisión, soporte y estado de publicación
 
-MIT — see [LICENSE](./LICENSE).
+Consulta [REVIEW.md](./REVIEW.md) para los cinco casos positivos y los tres negativos de revisión,
+y [SUPPORT.md](./SUPPORT.md) para el diagnóstico en ejecución y los bloqueos de publicación externos
+al paquete.
+
+## Licencia
+
+MIT — véase [LICENSE](./LICENSE).

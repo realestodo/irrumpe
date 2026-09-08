@@ -1,0 +1,15 @@
+interface:
+  display_name: "Operador de Irrumpe"
+  short_description: "Opera Irrumpe mediante su MCP"
+  default_prompt: "Quiero consultar u operar mi espacio de trabajo en Irrumpe"
+
+policy:
+  allow_implicit_invocation: true
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "irrumpe"
+      description: "MCP remoto de Irrumpe para contenido, Brand Center, Pulso, Ads, proyectos, tareas, estados y onboarding"
+      transport: "streamable_http"
+      url: "https://mcp.realestodo.com/mcp"

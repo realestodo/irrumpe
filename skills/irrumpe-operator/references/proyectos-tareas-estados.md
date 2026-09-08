@@ -5,6 +5,14 @@ aprobación y el rechazo de documentos). Prosa en español; tools, campos y valo
 
 ---
 
+## Índice
+
+1. [Proyectos](#1-proyectos)
+2. [Tareas](#2-tareas)
+3. [Vocabulario de estados](#3-vocabulario-de-estados)
+4. [Aprobar o rechazar](#4-aprobar--rechazar--apply_status_transition)
+5. [Versiones de documento](#5-versiones-de-documento)
+
 ## 1. Proyectos
 
 ### Lecturas
@@ -32,18 +40,18 @@ de workflow van por `apply_status_transition` (§4); `project_update` nunca camb
 
 ### Lecturas
 
-- `list_brand_tasks` (`brand_id`, `query`, `status_code`, `semantic_action_code`,
+- `list_brand_tasks` (`brand_id`, `query`, `status_code`, `status_id`,
   `date_from/date_to`, `include_archived`) — tareas con estado canónico, agenda y asignaciones
   nativas.
-- `list_brand_task_assignees`, `list_brand_task_links`, `list_task_semantic_actions`,
-  `list_task_status_options` — asignados, links, acciones semánticas y ciclo de vida operacional.
+- `list_brand_task_assignees`, `list_brand_task_links`, `list_task_status_options` — asignados,
+  links y ciclo de vida operacional.
 
 ### Escrituras
 
 Las tools de tarea usan parámetros con prefijo `p_`:
 
-- `task_update` — PATCH: `p_task_id` + `p_patch` con claves permitidas `title`, `descripcion`,
-  `prioridad`, `semantic_action_code`, `semantic_action_continuation`.
+- `task_update` — PATCH: `p_task_id` + `p_patch` con claves permitidas `title`, `descripcion` y
+  `prioridad`. Cualquier otra clave es rechazada como campo no soportado.
 - `task_status_set` — `p_task_id` + `p_status_code ∈ {briefing, en_desarrollo, terminado,
   postergado, cancelado}` + `p_reason` opcional (≤1000). Las tareas usan este ciclo operacional y no
   aceptan acciones de revisión de documentos.
@@ -103,6 +111,6 @@ apply_status_transition({
 
 ## 5. Versiones de documento
 
-`list_document_versions`, `document_version_restore`, `document_version_milestone`,
-`document_version_delete` — detalladas en `contenido-y-documentos.md` §6; aplican a cualquier
-documento nativo, incluidos los cuerpos de tareas y proyectos.
+`list_document_versions`, `document_version_restore`, `document_version_milestone` — detalladas en
+`contenido-y-documentos.md` §6; aplican a cualquier documento nativo, incluidos los cuerpos de
+tareas y proyectos.

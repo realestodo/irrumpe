@@ -1,8 +1,6 @@
 {
-  "mcpServers": {
-    "irrumpe": {
-      "type": "http",
-      "url": "https://mcp.realestodo.com/mcp"
-    }
+  "irrumpe": {
+    "type": "http",
+    "url": "https://mcp.realestodo.com/mcp"
   }
 }

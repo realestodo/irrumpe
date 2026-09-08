@@ -1,0 +1,15 @@
+interface:
+  display_name: "Onboarding de marca"
+  short_description: "Guía de onboarding de marca"
+  default_prompt: "Quiero iniciar o continuar el onboarding de mi marca en Irrumpe"
+
+policy:
+  allow_implicit_invocation: true
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "irrumpe"
+      description: "MCP remoto de Irrumpe para estado, catálogo y operaciones de onboarding de marca"
+      transport: "streamable_http"
+      url: "https://mcp.realestodo.com/mcp"

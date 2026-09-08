@@ -7,6 +7,17 @@ identificadores del formato, no se traducen). El contrato de carga y la subida d
 
 ---
 
+## Índice
+
+1. [Envoltura de persistencia](#1-envoltura-de-persistencia)
+2. [EditorDocument](#2-editordocument)
+3. [Propiedades comunes](#3-propiedades-comunes-layerbase)
+4. [Tipos de capa](#4-tipos-de-capa)
+5. [Colores](#5-colores)
+6. [Vocabulario de estilo](#6-vocabulario-de-estilo-opcional-layerstyle)
+7. [Validación](#7-validación--qué-exige-el-editor-al-cargar)
+8. [Recetas de elementos nativos](#8-recetas-de-elementos-nativos)
+
 ## 1. Envoltura de persistencia
 
 ```jsonc
@@ -121,9 +132,11 @@ Konva carece de `text-transform`: las mayúsculas se aplican al literal de `text
 ```ts
 { type: "image", src: string, width, height }
 ```
-`src` acepta URL http(s) (con CORS; el editor usa `crossOrigin="anonymous"`) o `data:` URI. Un
-vector arbitrario puede incrustarse como SVG en data-URI. Las fotos de marca van en R2
-(`https://pipelines.realestodo.com/...`).
+`src` acepta URL http(s) (con CORS; el editor usa `crossOrigin="anonymous"`) o `data:` URI. Este
+soporte del parser no reemplaza el upload: todo archivo aportado por el usuario o descargado de una
+fuente externa va a R2. Reservar `data:image/svg+xml,...` para SVG textual compuesto por el modelo
+cuando `shape` o `icon` no expresen el vector; no convertir archivos binarios a base64 dentro del
+contexto. Las fotos de marca van en R2 (`https://pipelines.realestodo.com/...`).
 
 ### video
 ```ts
