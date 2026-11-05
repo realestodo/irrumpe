@@ -30,7 +30,7 @@ Codex. No sustituyen las URL externas de soporte, privacidad o términos.
   operación que depende de una herramienta ausente o que falla.
 - **La entrevista exige una cuenta `player` o una auditoría previa.** Las versiones
   hasta `1.2.3` incluían un bloqueo de certificación en la referencia del onboarding.
-  Actualiza a `1.2.4` y abre una conversación nueva. El flujo usa las capacidades
+  Actualiza a `1.2.4` o posterior y abre una conversación nueva. El flujo usa las capacidades
   de la cuenta conectada; una sesión administradora puede responder la entrevista.
   Las pruebas con `player` siguen siendo necesarias para acreditar ese perfil en
   la publicación, pero no son un requisito de uso para todas las personas.
@@ -45,7 +45,7 @@ Codex. No sustituyen las URL externas de soporte, privacidad o términos.
 
 ## Estado de publicación
 
-Versión del paquete: `1.2.4`.
+Versión del paquete: `1.3.0`.
 
 Validación local en Claude Code: `claude plugin validate --strict <ruta-del-paquete>`.
 Cuando el paquete se valida desde su propio directorio, ese comando valida primero

@@ -1,7 +1,7 @@
 # Diseño y Brand Center — contratos MCP
 
-Cómo se crean, editan y archivan los diseños del editor Konva, cómo se consultan los assets del
-Brand Center y cómo entran los archivos a R2. Prosa en español; tools, campos y valores en inglés.
+Cómo se crean, editan y archivan los diseños, plantillas y componentes del editor Konva, cómo se
+consultan los assets del Brand Center y cómo entran los archivos a R2. Prosa en español; tools, campos y valores en inglés.
 
 ---
 
@@ -9,7 +9,7 @@ Brand Center y cómo entran los archivos a R2. Prosa en español; tools, campos 
 
 1. [Modelo](#1-modelo)
 2. [Consultar assets](#2-consultar-assets)
-3. [Crear y editar diseños](#3-crear-y-editar-diseños--brand_center_item_upsert)
+3. [Crear y editar diseños, plantillas y componentes](#3-crear-y-editar-diseños-plantillas-y-componentes--brand_center_item_upsert)
 4. [Archivar](#4-archivar--brand_center_item_archive)
 5. [Cargar archivos a R2](#5-cargar-archivos-a-r2--staged-upload-sin-base64)
 6. [Guardar outputs generados](#6-guardar-outputs-generados)
@@ -21,9 +21,21 @@ Un **diseño** es un item de Brand Center con `dimension_key: "design"` (o `"tem
 `typed_payload` es la envoltura `{ kind: "design_document", schema_version: 1, editor_key: "konva",
 design_name, design_document }`. El `design_document` es un `EditorDocument` JSON plano
 (`{ version: 1, pages[] }`); la especificación completa del formato está en
-`formato-design-document.md`. El Brand Center también guarda las demás dimensiones de la marca
-(logos, paletas, tipografías, productos, banco de imágenes); consulta el listado vigente con
-`list_brand_center_dimensions`.
+`formato-design-document.md`.
+
+Un **componente** (`dimension_key: "component"`) es un elemento reutilizable que se coloca dentro
+de diseños (una insignia, un lockup, un bloque animado), no una página completa. Su `typed_payload`
+es `{ kind: "component_document", schema_version: 1, editor_key: "konva", component_name,
+component_document, root_layer_id, snapshot_hash, duration_seconds }`: `component_document` es un
+`EditorDocument`, `root_layer_id` es el id de un frame de la primera página, `snapshot_hash` es
+cualquier etiqueta no vacía de esa versión y `duration_seconds` es mayor que 0.
+
+**Elegir la dimensión.** Antes de crear un item, `list_brand_center_dimensions`: el
+`metadata.write_contract` de cada dimensión dice cuándo usarla (`use_when`), qué claves de
+`typed_payload` acepta y exige (`typed_payload_schema`) y trae un ejemplo mínimo (`examples`).
+`design` es una pieza única; `template`, un layout reutilizable desde el que parten diseños nuevos;
+`component`, un elemento reutilizable dentro de diseños. Las demás dimensiones (logos, paletas,
+tipografías, productos, banco de imágenes) siguen el mismo contrato.
 
 ## 2. Consultar assets
 
@@ -39,7 +51,7 @@ design_name, design_document }`. El `design_document` es un `EditorDocument` JSO
 
 Las búsquedas devuelven resúmenes de metadata; los binarios nunca viajan por el MCP.
 
-## 3. Crear y editar diseños — `brand_center_item_upsert`
+## 3. Crear y editar diseños, plantillas y componentes — `brand_center_item_upsert`
 
 ### Límite de composición
 
@@ -48,10 +60,12 @@ Componer solo desde uno de estos insumos: un brief explícito aprobado por el us
 el contenido, la jerarquía y las restricciones visuales. Si falta una decisión que cambia el
 concepto o el sistema visual, pedirla; esta skill no origina dirección creativa autónoma.
 
-El backend valida solo que `typed_payload` sea un objeto JSON; la validación real de la estructura
-Konva la hace el editor al cargar. Un documento malformado se guarda sin error de API y el editor lo
-bloquea al abrirlo. Por eso la verificación previa con `tools/validar_design_document.py` es
-obligatoria en cada upsert de diseño.
+El backend aplica el contrato de escritura de la dimensión (para `component`, los cuatro campos
+obligatorios, rechazados como `invalid_argument` con el `field` que falta) y el control de revisión
+del documento, pero no valida la estructura Konva: esa validación la hace el editor al cargar. Un
+documento malformado se guarda sin error de API y el editor lo bloquea al abrirlo. Por eso la
+verificación previa con `tools/validar_design_document.py` es obligatoria en cada upsert de diseño,
+plantilla o componente.
 
 **Resolución de la herramienta:** usar una ruta de paquete que el host exponga. En Claude Code la
 raíz instalada es `${CLAUDE_PLUGIN_ROOT}`, así que la herramienta es
@@ -62,19 +76,27 @@ del usuario ni suponer otra variable de entorno. Si el host no expone una ruta e
 archivo no existe, no hacer el upsert: pedir validación por una superficie nativa o una validación
 MCP que el runtime confirme equivalente.
 
-**Flujo:** validar el `design_document` con la herramienta; ella devuelve `upsert_arguments`; pasar
-ese objeto **tal cual** como argumentos de `brand_center_item_upsert`. Armar la envoltura a mano está
+**Flujo:** validar el documento con la herramienta; ella devuelve `upsert_arguments`; pasar ese
+objeto **tal cual** como argumentos de `brand_center_item_upsert`. Armar la envoltura a mano está
 prohibido.
+
+**Componente:** ejecutar la herramienta con `--dimension-key component`. La raíz es el único frame
+de primer nivel de la primera página, o el que indique `--root-layer-id`; `snapshot_hash` lo genera
+la herramienta a partir del contenido del documento (o `--snapshot-hash`); `duration_seconds` sale
+de `--duration-seconds`, de la duración de la primera página o, si no hay, de los 5 s del editor.
+Una raíz ambigua, una raíz que no es frame o una duración no positiva se reportan como error y no
+se emiten `upsert_arguments`.
 
 Los argumentos del tool son **planos** (sin objeto `payload` envolvente):
 
 ```jsonc
 brand_center_item_upsert({
   brand_id,
-  dimension_key: "design",              // o "template"
+  dimension_key: "design",              // o "template" o "component"
   title,
   item_key: "design-<slug>-pNN",        // crear: item_key nuevo, sin brand_center_item_id
   brand_center_item_id: "<uuid>",       // editar: fuerza la actualización del item existente
+  expected_document_revision: "<uuid>", // editar: revisión vigente del documento
   typed_payload: { /* lo arma la herramienta */ }
 })
 ```
@@ -83,8 +105,12 @@ Reglas:
 - La respuesta NO devuelve el `typed_payload`; confírmalo con `get_brand_center_item_detail`.
 - **Crear:** `item_key` nuevo, sin `brand_center_item_id`.
 - **Editar:** lee el documento actual con `get_brand_center_item_detail`, modifica y re-sube **con el
-  `brand_center_item_id` explícito**. Sin ese id, un `item_key` existente puede preservar el diseño
-  guardado en lugar de reemplazarlo.
+  `brand_center_item_id` explícito** y con `expected_document_revision` igual al
+  `typed_payload.document_revision` que devolvió esa lectura (pásalo a la herramienta con
+  `--expected-document-revision`). Sin ese id, un `item_key` existente puede preservar el diseño
+  guardado en lugar de reemplazarlo. Sin revisión, el reemplazo se rechaza (`invalid_argument`,
+  `field: expected_document_revision`); con una revisión vencida responde `conflict`: relee y
+  reintenta con la revisión nueva.
 - **Documento inválido = no se sube.** Si la herramienta reporta errores, corrige el documento antes
   de intentar el upsert. Revisa también las advertencias (`media://` sin resolver, datos de chart no
   positivos, fuentes sin stack de fallback).
@@ -98,7 +124,9 @@ Reglas:
   `--no-layout-lint` las silencia cuando el encargo las acepta de forma explícita.
 - **Gotcha de autoguardado:** si el editor está abierto en ese item, su autoguardado pisa el upsert.
   Re-sube con el editor cerrado en ese item.
-- Handoff al usuario: `https://irrumpe.realestodo.com/brand/<brandId>/designer?item=<itemId>`.
+- Handoff al usuario: un diseño o plantilla se abre en
+  `https://irrumpe.realestodo.com/brand/<brandId>/designer?item=<itemId>`; un componente, en
+  `https://irrumpe.realestodo.com/brand/<brandId>/designer/project/<itemId>`.
 - Tokens reales: toda tipografía y color del diseño salen del Brand Center de la marca (paletas,
   fuentes vía `list_brand_fonts`). Si falta un token, repórtalo; nunca lo inventes.
 
@@ -156,6 +184,9 @@ Reglas de seguridad:
 ## 7. Verificación posterior
 
 1. `get_brand_center_item_detail` confirma que el `typed_payload` persistió.
-2. Para diseños: renderiza o pide al usuario abrir el handoff antes de declarar el trabajo listo. Un
-   documento que valida puede verse mal (texto desbordado, fondo equivocado).
+2. Para diseños y plantillas: renderiza una página con `design_page_render` (`mode: "persisted"`,
+   `brand_center_item_id`, `page_id`; o un `design_document` en línea con `brand_id`) o pide al
+   usuario abrir el handoff antes de declarar el trabajo listo. Un documento que valida puede verse
+   mal (texto desbordado, fondo equivocado). El modo persistido acepta solo `design` y `template`;
+   para un componente, pide al usuario abrir su handoff.
 3. Para archivos: la `public_url` debe responder `200` con el `content-type` esperado.

@@ -1,7 +1,7 @@
 # Irrumpe OS
 
 Paquete autónomo de operación para la plataforma [Irrumpe](https://irrumpe.realestodo.com), para
-**Claude Code** y **OpenAI Codex**. Incluye dos habilidades y un comando; sus manifiestos declaran el MCP
+**Claude Code**, **OpenAI Codex** y **Google Antigravity**. Incluye dos habilidades y un comando; sus manifiestos declaran el MCP
 remoto de Irrumpe (`https://mcp.realestodo.com/mcp`) y usan OAuth con la cuenta de Irrumpe de la
 persona:
 
@@ -57,6 +57,16 @@ El manifiesto de Codex declara `.mcp.json`; una publicación futura en un market
 verificar cómo el entorno aplica esa declaración. Los comandos slash pertenecen a Claude Code. En
 Codex, solicita la operación deseada de la plataforma en lenguaje natural. La habilidad de onboarding
 focalizada opera su flujo solo cuando puede confirmar el contrato vivo del MCP.
+
+## Instalación — Antigravity
+
+```
+agy plugin install https://github.com/realestodo/irrumpe
+```
+
+El paquete incluye `plugin.json` y `mcp_config.json` en la raíz con el servidor MCP remoto de
+Irrumpe (`https://mcp.realestodo.com/mcp`). Autentícate mediante el flujo OAuth del servidor `irrumpe`
+con tu cuenta de Irrumpe y solicita la operación deseada de la plataforma en lenguaje natural.
 
 ## Lo que exige el operador
 

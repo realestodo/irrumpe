@@ -43,7 +43,7 @@ Lee la reference del dominio ANTES de operar en él; ahí viven los contratos co
 | Dominio | Tools principales | Reference |
 |---|---|---|
 | Contenido, documentos, media, briefs, planificación, hilos | `list_brand_content`, `create_content`, `content_update`, `append_document_blocks`, `replace_block_text`, `content_media_url_import`, `create_domain_item`, `import_brand_planning` | `references/contenido-y-documentos.md` |
-| Diseños Konva y assets del Brand Center | `brand_center_item_upsert`, `get_brand_center_item_detail`, `list_brand_center_items`, `search_brand_assets`, `brand_center_file_staged_upload_create/_finalize` | `references/diseno-brand-center.md` |
+| Diseños, plantillas y componentes Konva y assets del Brand Center | `list_brand_center_dimensions` (contratos de escritura), `brand_center_item_upsert`, `get_brand_center_item_detail`, `list_brand_center_items`, `search_brand_assets`, `design_page_render`, `brand_center_file_staged_upload_create/_finalize` | `references/diseno-brand-center.md` |
 | Formato del design_document (spec Konva) | — | `references/formato-design-document.md` |
 | Campañas Google Ads | `list_brand_ads_*`, escrituras tipadas `ads_*`, `ads_campaign_keyword_match_type_set`, `ads_action_approve` | `references/ads.md` |
 | Métricas de Pulso | `get_brand_performance_availability`, `get_brand_performance_dashboard`, `list_brand_metric_snapshots`, `list_brand_metric_timeseries` | `references/pulso-metricas.md` |
@@ -73,8 +73,8 @@ Reglas que ninguna reference relaja:
    da una ruta de la skill y acceso local, verificar que `../../tools/validar_design_document.py`
    exista desde `SKILL.md`, convertirla a ruta absoluta y ejecutarla; nunca buscar `tools/` desde el
    workspace del usuario. Si el host no expone ejecución local o la ruta no existe, no afirmar una
-   validación ni hacer un upsert de diseño: explicar que hace falta el validador empaquetado o una
-   validación equivalente confirmada por el MCP. El upsert usa el `upsert_arguments` devuelto tal
+   validación ni hacer un upsert de diseño, plantilla o componente: explicar que hace falta el
+   validador empaquetado o una validación equivalente confirmada por el MCP. El upsert usa el `upsert_arguments` devuelto tal
    cual. Armar el `typed_payload` a mano está prohibido.
 5. **Ads: `dry_run` explícito, confirmación y estado real.** `dry_run: true` no despacha al provider,
    pero puede crear una acción en Irrumpe; obtener confirmación antes de usarlo. Una solicitud real
@@ -100,10 +100,12 @@ Reglas que ninguna reference relaja:
 - **Aprobar / rechazar:** resolver el estado y las acciones disponibles
   (`get_content_status_options`, `list_workflow_statuses`), transicionar con
   `apply_status_transition` (`approve` / `request_changes` + `reason`), releer y reportar.
-- **Crear o editar un diseño:** confirmar el brief/template de entrada, leer la spec y los
-  contratos, componer el `design_document`, resolver y ejecutar el validador, subir media por staged
-  upload, hacer upsert, verificar con `get_brand_center_item_detail` y entregar el handoff. Declarar
-  la validación visual pendiente hasta contar con un render real o la inspección del usuario.
+- **Crear o editar un diseño, plantilla o componente:** confirmar el brief/template de entrada,
+  elegir la dimensión según el `write_contract` de `list_brand_center_dimensions`, leer la spec y
+  los contratos, componer el documento, resolver y ejecutar el validador, subir media por staged
+  upload, hacer upsert, verificar con `get_brand_center_item_detail` y entregar el handoff. Al
+  editar, pasar la revisión vigente (`expected_document_revision`). Declarar la validación visual
+  pendiente hasta contar con un render real o la inspección del usuario.
 - **Cargar / consultar assets:** `search_brand_assets` y los listados por dimensión para leer;
   staged upload + `brand_center_item_upsert` para cargar.
 - **Consultar Pulso:** availability → dashboard (`preset`) → snapshots/timeseries para el detalle.
@@ -121,8 +123,14 @@ Reglas que ninguna reference relaja:
   resultado quedó desconocido.
 - 402 `plan_required` → informar que la operación no está disponible en el plan actual y
   detenerse. El contrato público no expone ofertas, precios ni metadata comercial.
+- 400 `invalid_argument` → corregir sólo el argumento que nombra `field` (ruta con puntos para un
+  argumento anidado, p. ej. `typed_payload.snapshot_hash`) y reintentar una vez; no adivinar otros
+  argumentos.
 - 409 `content_revision_changed` → releer el documento y reintentar sólo con
   `expected_content_revision` actualizado; no reutilizar una revisión vencida.
+- 409 `conflict` al reemplazar un diseño, plantilla o componente → releer con
+  `get_brand_center_item_detail` y reintentar con su `typed_payload.document_revision` como
+  `expected_document_revision`.
 - 422 `onboarding_incomplete` → mostrar únicamente los campos tipados de `detail.failing` y
   volver al campo indicado; no inferir detalles internos desde el mensaje.
 - 403 → reportar el permiso faltante (guardrail 2), sin rodeos ni rutas alternativas.

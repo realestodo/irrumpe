@@ -118,7 +118,9 @@ esquina + radio.
   fill: string,
   width: number,           // ancho de caja
   fontFamily: string,      // STACK CSS completo, p. ej. "\"mi-fuente\", sans-serif"
-  fontStyle: "normal" | "bold" | "italic" | "italic bold",
+  fontWeight?: number,     // 100–900 en pasos de 100: el peso que dibuja el editor
+  fontStyle: "normal" | "bold" | "italic" | "italic bold",  // espejo legado de fontWeight
+  runs?: TextRun[],        // estilo por rango, ver abajo
   letterSpacing: number,   // px de lienzo
   lineHeight: number,      // multiplicador del font-size
   align: "left" | "center" | "right" | "justify"
@@ -127,6 +129,31 @@ esquina + radio.
 La fuente se guarda como stack CSS en `fontFamily`; el editor la resuelve contra sus proveedores
 (system, Google Fonts, self-hosted, kit de Adobe Fonts de la marca — este último rankea primero).
 Konva carece de `text-transform`: las mayúsculas se aplican al literal de `text`.
+
+**Familia (`fontFamily`).** Escribe el `stack` exacto que `list_brand_fonts` devuelve para la familia
+elegida (p. ej. `"\"polymath-display\", sans-serif"`). No uses el nombre para mostrar (`family_name`) ni
+la familia suelta (`"polymath-display"`): la fuente se registra con su stack y una familia suelta no
+tiene fallback genérico. Las pilas del sistema del editor (`system-ui, sans-serif`, `Georgia, serif`,
+`Arial, sans-serif`, `Courier New, monospace`) y la pila por defecto (`Geist Mono, monospace`) también
+son válidas. El validador rechaza cualquier otra `fontFamily` de texto o de run que no termine en una
+familia genérica sin comillas (`sans-serif`, `serif`, `monospace`, `cursive`, `fantasy`, `system-ui`).
+
+**Peso (`fontWeight`).** Es un número de 100 a 900 en pasos de 100 (`100, 200, … 900`) y es el peso
+que dibuja el editor. Escríbelo siempre junto con `fontStyle`, su espejo legado: `"bold"` cuando el
+peso es ≥ 600 (`"italic bold"` si la capa también es cursiva); `"normal"` o `"italic"` por debajo.
+Escribe siempre el número (`fontWeight: 900`). La API tolera en el guardado la forma textual legada
+exacta (`"100"` a `"900"`), que el editor también lee como número, pero el skill nunca la escribe: el
+validador la marca para que la conviertas a número. Nunca escribas `fontStyle` numérico (`"900"`): el
+editor lo lee, pero no debe escribirse. Elige sólo pesos que la familia de la marca tiene de verdad:
+`list_brand_fonts` devuelve por familia su `variations` tal cual (p. ej. `n5`, `n7`, `n9` en Adobe
+Fonts, donde el número es el peso) y su `source`. Un peso que la familia no tiene se dibuja con la
+cara más cercana según la coincidencia CSS, no con el pedido; no lo inventes.
+
+**Runs (estilo por rango).** `runs` es un arreglo de rangos `[start, end)` sobre `text`, ordenados,
+sin solaparse y dentro del texto. Cada rango puede traer `fontWeight` (100–900) y overrides de
+`italic`, `underline`, `fill` o `fontFamily`; sin `fontWeight` (ni `bold`) hereda el peso de la
+capa. Un rango con sólo `bold` (legado) se dibuja en 700 si es `true` y en 400 si es `false`; para
+escribir peso, usa `fontWeight`. Si `runs` aparece, debe ser un arreglo.
 
 ### image
 ```ts
@@ -264,13 +291,29 @@ Rechaza el documento entero si falla cualquiera de:
     `{label: string, value: number}`, `palette` array de strings, flags booleanos, `textFill`
     string, `fontSize` finito.
 
-Tolerancias (se rellenan o limpian sin rechazar): estilo de texto faltante (fontFamily, fontStyle,
-letterSpacing, lineHeight, align) → defaults; `video.loop`/`muted` faltantes → `true`; `animation`
-inválida → descartada; campos `LayerStyle` inválidos → descartados uno a uno.
+Tolerancias de lectura (el editor rellena o limpia sin rechazar): estilo de texto faltante
+(fontFamily, fontStyle, letterSpacing, lineHeight, align) → defaults; `fontWeight` numérico en texto
+(`"900"`) → número; `fontWeight` inválido → se descarta y la capa sobrevive; sin `fontWeight`, un
+`fontStyle` numérico (`"900"`) fija el peso; un `fontWeight` inválido de un run se descarta sólo en
+ese run; `runs` que no es arreglo o trae rangos inválidos → se descartan todos los `runs` (texto
+uniforme); `video.loop`/`muted` faltantes → `true`; `animation` inválida → descartada; campos
+`LayerStyle` inválidos → descartados uno a uno.
+
+Al guardar, la API y el validador son más estrictos que el lector. La API acepta `fontWeight` (de la
+capa o de un run) como número 100–900 o como la cadena exacta `"100"` a `"900"`. Cualquier otro valor
+(por ejemplo `"bold"`, `950`, `"heavy"` o una cadena con espacios como `" 900"`) se rechaza con
+`design_document_not_canonical` en `/pages/<i>/layers/<j>/fontWeight`, regla `enum`. La API también
+rechaza `runs` que no sea un arreglo. Antes del upsert, `tools/validar_design_document.py` rechaza
+además cualquier `fontWeight` de texto, aunque la API lo tolere (el mensaje indica convertirlo a
+número), un `fontStyle` numérico y un `fontStyle` que no coincide con `fontWeight` (negrita sólo si
+el peso es ≥ 600; la cursiva se conserva). Un documento
+legado con sólo `fontStyle` de palabras clave, sin `fontWeight`, sigue siendo válido: no lo rechaces,
+pero al reescribirlo escribe también `fontWeight`.
 
 La herramienta `tools/validar_design_document.py` espeja estas reglas y además **advierte** (sin
 rechazar) cuando un chart tiene todos sus valores ≤ 0, un `src` usa `media://` o un esquema distinto
-de `https://`/`data:`, o una `fontFamily` no trae stack con fallback.
+de `https://`/`data:`, o una `fontFamily` de chart sin familia genérica final. Una `fontFamily` de
+texto o de run sin familia genérica final no es advertencia: el validador la rechaza (ver `### text`).
 
 ## 8. Recetas de elementos nativos
 

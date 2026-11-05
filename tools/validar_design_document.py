@@ -3,11 +3,14 @@
 
 WHY THIS EXISTS
 ---------------
-A Designer "design" is a Brand Center item whose ``typed_payload`` carries a Konva
-``EditorDocument``. The MCP write tool (``brand_center_item_upsert``) only checks
-that ``typed_payload`` is a JSON object — it never validates the Konva schema. So a
-structurally-valid-JSON but Konva-invalid document persists WITHOUT an API error,
-then the Designer rejects it on open (``parseEditorDocument`` returns null). With the
+A Designer "design", "template" or "component" is a Brand Center item whose
+``typed_payload`` carries a Konva ``EditorDocument``. The MCP write tool
+(``brand_center_item_upsert``) enforces the dimension's write contract (for a component:
+``component_document``, ``root_layer_id``, ``snapshot_hash`` and ``duration_seconds``,
+refused as ``invalid_argument`` naming the field) and the document revision guard, but it
+never validates the Konva schema. So a structurally-valid-JSON but Konva-invalid document
+persists WITHOUT an API error, then the Designer rejects it on open
+(``parseEditorDocument`` returns null). With the
 Front F1 fix that now blocks a corrupt item instead of silently overwriting it, the
 practical consequence of a bad remote write is "the design will not open" rather than
 data loss — but either way the author must be told BEFORE the upsert.
@@ -25,9 +28,15 @@ Mirrors ``Irrumpe Front/app/lib/editor/editor-model.ts``:
   - ``isValidLayerBase``         (id/name string, x/y/rotation/opacity finite, visible/locked bool, parentId null|string)
   - ``isValidLayer``             (per-type required fields for the 11 layer types)
   - ``isCellMatrix``             (table.cells: non-empty rectangular string matrix)
-And the envelope from ``editor-brand-library.ts`` ``designTypedPayload`` +
-the MCP tool input schema in ``Irrumpe API/cloudflare/mcp-gateway/src/tools/index.ts``
-(FLAT args, NOT wrapped in a ``payload`` object).
+  - ``resolveTextFontWeight`` / ``legacyFontStyleFor`` (typography-style.ts) and the save rules
+    of ``writeLayerProperties`` (editor-document.contract.json, contract v3): text fontWeight,
+    runs[].fontWeight, runs as array, and the fontStyle keyword mirror
+And the envelopes from ``editor-brand-library.ts`` ``designTypedPayload`` and
+``componentTypedPayload`` (a component must also pass ``componentDocumentFromTypedPayload``:
+root layer is a ``frame`` on the first page, non-empty ``snapshot_hash``, finite
+``duration_seconds`` > 0; default duration ``DEFAULT_PAGE_DURATION`` of ``editor-model.ts``),
+plus the MCP tool input schema published by ``Irrumpe API`` (FLAT args, NOT wrapped in a
+``payload`` object; ``expected_document_revision`` to replace an existing document).
 
 When the Front validator changes, bump CONTRACT_VERSION and re-run ``--self-test``.
 Code comments are in English per the marketplace universal tool exception; JSON field
@@ -44,7 +53,13 @@ import sys
 from collections import Counter
 from typing import Any
 
-CONTRACT_VERSION = "1"
+CONTRACT_VERSION = "3"
+
+# componentTypedPayload (editor-brand-library.ts) pins these envelope values.
+COMPONENT_PAYLOAD_KIND = "component_document"
+COMPONENT_SCHEMA_VERSION = 1
+# editor-model.ts DEFAULT_PAGE_DURATION: the duration a page without durationSeconds plays.
+DEFAULT_PAGE_DURATION = 5
 
 # Version of the deterministic layout lint (geometry-only, warnings-only).
 LAYOUT_LINT_VERSION = "1"
@@ -61,6 +76,27 @@ LAYER_TYPES = {
 KNOWN_CHART_KINDS = {"bar", "line", "area", "pie", "donut"}
 
 ANIMATION_EASINGS = {"linear", "ease-in", "ease-out", "ease-in-out", "back-out"}
+
+# TEXT_FONT_WEIGHTS (typography-style.ts): the weights the editor stores and the write
+# contract accepts (editor-document.contract.json, writeLayerProperties, contract v3).
+TEXT_FONT_WEIGHTS = (100, 200, 300, 400, 500, 600, 700, 800, 900)
+_NUMERIC_TOKEN = re.compile(r"[0-9]+")
+
+# EDITOR_SYSTEM_FONT_STACKS: stacks the editor owns; they need no brand registration.
+# Copied from Irrumpe Front app/lib/editor/generated/editor-document.contract.json, contractVersion 3:
+# localSystemFontStacks, plus defaultTextFontStack (the stack of the Google-backed system family
+# listed in googleBackedSystemFamilies, "Geist Mono"). The marketplace checkout does not carry the
+# Front repository, so this validator cannot read the contract at run time; re-copy on a bump.
+EDITOR_SYSTEM_FONT_STACKS = frozenset({
+    "system-ui, sans-serif",
+    "Georgia, serif",
+    "Arial, sans-serif",
+    "Courier New, monospace",
+    "Geist Mono, monospace",
+})
+
+# CSS generic family keywords a brand stack must end with (CSS Fonts; keywords match case-insensitively).
+GENERIC_FONT_FAMILIES = frozenset({"sans-serif", "serif", "monospace", "cursive", "fantasy", "system-ui"})
 
 # Image/video src must resolve to a loadable, export-safe URL. media:// is the
 # unresolved Brand Center placeholder; bare http (non-TLS) and unknown schemes
@@ -225,6 +261,109 @@ def _warn_font(report: Report, layer: dict, path: str, ltype: str) -> None:
         )
 
 
+def _is_text_font_weight(value: Any) -> bool:
+    # JSON numbers only: bool is excluded (an int in Python). 400.0 equals 400 in JS, so it passes.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return value in TEXT_FONT_WEIGHTS
+
+
+def _weight_expected(value: Any) -> str:
+    # The API also accepts the exact strings "100".."900" (D14). This validator stays stricter on
+    # purpose: a string is refused, and the message tells the agent to convert it to a number.
+    if _is_string(value) and value in {str(w) for w in TEXT_FONT_WEIGHTS}:
+        return (f'number {value}: convert the string "{value}" to the number {value} '
+                "(write fontWeight as a number)")
+    if _is_string(value):
+        return "number 100-900 in steps of 100 (write a number, not text)"
+    return "number 100-900 in steps of 100"
+
+
+def _validate_text_weight(report: Report, layer: dict, path: str, ltype: str) -> None:
+    # Save rule: a present fontWeight must be a number 100-900 in steps of 100. A present
+    # invalid value (null included) is refused, as the write contract refuses it.
+    weight = layer.get("fontWeight")
+    if "fontWeight" in layer and not _is_text_font_weight(weight):
+        report.error(f"{path}.fontWeight", "TEXT_FONT_WEIGHT",
+                     _weight_expected(weight), weight, ltype)
+    style = layer.get("fontStyle")
+    if _is_string(style) and any(_NUMERIC_TOKEN.fullmatch(tok) for tok in style.split()):
+        # The editor still reads a numeric fontStyle ("900"), but it is never written.
+        report.error(f"{path}.fontStyle", "TEXT_FONT_STYLE_NUMERIC",
+                     "normal, bold, italic or italic bold (write fontWeight instead)", style, ltype)
+    elif _is_string(style) and _is_text_font_weight(weight):
+        # legacyFontStyleFor: the keyword mirror is bold iff fontWeight >= 600; italic is carried through.
+        if ("bold" in style.lower()) != (weight >= 600):
+            report.error(f"{path}.fontStyle", "TEXT_FONT_STYLE_MIRROR",
+                         "bold when fontWeight >= 600, not bold below (italic kept)", style, ltype)
+    if "runs" in layer:
+        runs = layer["runs"]
+        if not isinstance(runs, list):
+            report.error(f"{path}.runs", "OPTIONAL_ARRAY", "array or absent", runs, ltype)
+        else:
+            for i, run in enumerate(runs):
+                if _is_record(run) and "fontWeight" in run \
+                        and not _is_text_font_weight(run["fontWeight"]):
+                    report.error(f"{path}.runs[{i}].fontWeight", "TEXT_FONT_WEIGHT",
+                                 _weight_expected(run["fontWeight"]), run["fontWeight"], ltype)
+
+
+_FONT_STACK_EXPECTED = (
+    "the stack exactly as list_brand_fonts returns it for the family: a CSS stack that ends with an "
+    "unquoted generic family (sans-serif, serif, monospace, cursive, fantasy or system-ui); "
+    "not a bare family or the display name"
+)
+
+
+def _stack_fallback_family(stack: str) -> "str | None":
+    # Last item of the CSS font-family list, lowercased. Commas inside quotes do not split the
+    # list. A quoted last item is a family name in CSS, never a generic keyword, so it gives None.
+    items: list[str] = []
+    current: list[str] = []
+    quote = ""
+    for ch in stack:
+        if quote:
+            current.append(ch)
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+            current.append(ch)
+        elif ch == ",":
+            items.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    items.append("".join(current))
+    last = items[-1].strip()
+    if not last or last[0] in "\"'":
+        return None
+    return last.lower()
+
+
+def _font_stack_is_unsafe(stack: str) -> bool:
+    # A stack with no generic fallback (bare brand family, display name, quoted generic keyword)
+    # has nothing to paint with when the brand font does not load. Editor stacks pass as they are.
+    if stack in EDITOR_SYSTEM_FONT_STACKS:
+        return False
+    return _stack_fallback_family(stack) not in GENERIC_FONT_FAMILIES
+
+
+def _validate_text_font_stack(report: Report, layer: dict, path: str, ltype: str) -> None:
+    # Applies to the text layer's fontFamily and to each run's fontFamily. A missing or non-string
+    # value is not checked here (unchanged from before); the chart keeps its warning in _warn_font.
+    family = layer.get("fontFamily")
+    if _is_string(family) and _font_stack_is_unsafe(family):
+        report.error(f"{path}.fontFamily", "TEXT_FONT_STACK", _FONT_STACK_EXPECTED, family, ltype)
+    runs = layer.get("runs")
+    if isinstance(runs, list):
+        for i, run in enumerate(runs):
+            if _is_record(run) and _is_string(run.get("fontFamily")) \
+                    and _font_stack_is_unsafe(run["fontFamily"]):
+                report.error(f"{path}.runs[{i}].fontFamily", "TEXT_FONT_STACK",
+                             _FONT_STACK_EXPECTED, run["fontFamily"], ltype)
+
+
 def _validate_layer(report: Report, layer: Any, path: str) -> None:
     if not _is_record(layer):
         report.error(path, "LAYER_NOT_OBJECT", "object", layer)
@@ -250,7 +389,8 @@ def _validate_layer(report: Report, layer: Any, path: str) -> None:
         _require_finite(report, layer, "fontSize", path, ltype)
         _require_string(report, layer, "fill", path, ltype)
         _require_finite(report, layer, "width", path, ltype)
-        _warn_font(report, layer, path, ltype)
+        _validate_text_font_stack(report, layer, path, ltype)
+        _validate_text_weight(report, layer, path, ltype)
     elif ltype in ("image", "video"):
         _require_string(report, layer, "src", path, ltype)
         _require_finite(report, layer, "width", path, ltype)
@@ -752,6 +892,59 @@ def build_upsert_arguments(document: Any, *, brand_id: str, design_name: str, ti
     return args
 
 
+# ---- component (mirror componentTypedPayload + componentDocumentFromTypedPayload) ----
+
+def default_snapshot_hash(document: Any) -> str:
+    """A free, non-empty version label derived from the document content (owner decision
+    2026-10-16: any non-empty label, generated here). Content-derived so a changed
+    document gets a new label; it is NOT the editor's own snapshot hash."""
+    import hashlib
+    canonical = json.dumps(document, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return "mcp-" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def resolve_component_root(document: Any, root_layer_id: str | None) -> tuple[str | None, str | None]:
+    """Return (root_layer_id, error). The root must be a frame layer of the FIRST page
+    (componentDocumentFromTypedPayload); without an explicit id, the single top-level
+    frame of the first page is used."""
+    pages = document.get("pages") if isinstance(document, dict) else None
+    first = pages[0] if isinstance(pages, list) and pages and isinstance(pages[0], dict) else None
+    layers = first.get("layers") if first else None
+    if not isinstance(layers, list):
+        return None, "the component document has no first page with layers"
+    if root_layer_id:
+        root = next((l for l in layers if isinstance(l, dict) and l.get("id") == root_layer_id), None)
+        if root is None:
+            return None, f"root layer {root_layer_id!r} is not a layer of the first page"
+        if root.get("type") != "frame":
+            return None, f"root layer {root_layer_id!r} is a {root.get('type')!r}, not a frame"
+        return root_layer_id, None
+    frames = [l for l in layers if isinstance(l, dict) and l.get("type") == "frame"
+              and l.get("parentId") is None]
+    if len(frames) != 1:
+        return None, (f"the first page has {len(frames)} top-level frame layers; "
+                      "pass --root-layer-id to choose the component root")
+    return frames[0]["id"], None
+
+
+def build_component_typed_payload(document: Any, *, component_name: str, root_layer_id: str,
+                                  snapshot_hash: str, duration_seconds: float,
+                                  source_design_item_id: str | None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "kind": COMPONENT_PAYLOAD_KIND,
+        "schema_version": COMPONENT_SCHEMA_VERSION,
+        "editor_key": "konva",
+        "component_name": component_name,
+        "component_document": document,
+        "root_layer_id": root_layer_id,
+        "snapshot_hash": snapshot_hash,
+        "duration_seconds": duration_seconds,
+    }
+    if source_design_item_id:
+        payload["source_design_item_id"] = source_design_item_id
+    return payload
+
+
 # ---- CLI -------------------------------------------------------------------------
 
 def _read_document(raw_arg: str) -> Any:
@@ -769,10 +962,21 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--brand-id", "--id-marca", dest="brand_id")
     parser.add_argument("--title", "--titulo", dest="title")
     parser.add_argument("--dimension-key", dest="dimension_key", default="design",
-                        choices=["design", "template"])
+                        choices=["design", "template", "component"])
     parser.add_argument("--item-key", dest="item_key")
     parser.add_argument("--brand-center-item-id", dest="brand_center_item_id")
     parser.add_argument("--source-template-item-id", dest="source_template_item_id")
+    parser.add_argument("--expected-document-revision", dest="expected_document_revision",
+                        help="current document revision (get_brand_center_item_detail); "
+                             "required by the API to replace an existing document")
+    parser.add_argument("--root-layer-id", dest="root_layer_id",
+                        help="component: id of the root frame layer on the first page")
+    parser.add_argument("--snapshot-hash", dest="snapshot_hash",
+                        help="component: version label (default: derived from the document)")
+    parser.add_argument("--duration-seconds", dest="duration_seconds", type=float,
+                        help="component: duration in seconds, > 0 (default: first page or 5)")
+    parser.add_argument("--source-design-item-id", dest="source_design_item_id",
+                        help="component: Brand Center item id of the design it came from")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--cover-frame-id", dest="cover_frame_id")
     group.add_argument("--cover-fit-all", dest="cover_fit_all", action="store_true")
@@ -819,7 +1023,38 @@ def main(argv: list[str]) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 1
 
-    # Build upsert arguments only when the design is valid AND enough identity is given.
+    component_fields: dict[str, Any] | None = None
+    if args.dimension_key == "component":
+        root_id, root_error = resolve_component_root(document, args.root_layer_id)
+        first_page = document["pages"][0] if document.get("pages") else {}
+        duration = args.duration_seconds
+        if duration is None:
+            page_duration = first_page.get("durationSeconds") if isinstance(first_page, dict) else None
+            duration = page_duration if isinstance(page_duration, (int, float)) and page_duration > 0 \
+                else DEFAULT_PAGE_DURATION
+        snapshot = args.snapshot_hash if args.snapshot_hash is not None else default_snapshot_hash(document)
+        component_errors = []
+        if root_error:
+            component_errors.append({"code": "COMPONENT_ROOT", "path": "$.pages[0]", "message": root_error})
+        if not (isinstance(duration, (int, float)) and math.isfinite(duration) and duration > 0):
+            component_errors.append({"code": "COMPONENT_DURATION", "path": "duration_seconds",
+                                     "message": "duration_seconds must be a finite number > 0"})
+        if not snapshot.strip():
+            component_errors.append({"code": "COMPONENT_SNAPSHOT_HASH", "path": "snapshot_hash",
+                                     "message": "snapshot_hash must be a non-empty label"})
+        if component_errors:
+            print(json.dumps({
+                "contract_version": CONTRACT_VERSION,
+                "layout_lint_version": LAYOUT_LINT_VERSION if args.layout_lint else None,
+                "valid": False,
+                "errors": component_errors,
+                "warnings": report.warnings,
+            }, ensure_ascii=False, indent=2))
+            return 1
+        component_fields = {"root_layer_id": root_id, "snapshot_hash": snapshot,
+                            "duration_seconds": duration}
+
+    # Build upsert arguments only when the document is valid AND enough identity is given.
     if args.brand_id and (args.title or args.design_name):
         cover = _COVER_FIT_ALL if args.cover_fit_all else args.cover_frame_id
         result["upsert_arguments"] = build_upsert_arguments(
@@ -833,6 +1068,15 @@ def main(argv: list[str]) -> int:
             source_template_item_id=args.source_template_item_id,
             cover_frame_id=cover,
         )
+        if component_fields is not None:
+            result["upsert_arguments"]["typed_payload"] = build_component_typed_payload(
+                document,
+                component_name=args.design_name or args.title,
+                source_design_item_id=args.source_design_item_id,
+                **component_fields,
+            )
+        if args.expected_document_revision:
+            result["upsert_arguments"]["expected_document_revision"] = args.expected_document_revision
     else:
         result["upsert_arguments_note"] = (
             "pass --brand-id and --title (or --design-name) to emit upsert_arguments"
@@ -905,6 +1149,86 @@ def _run_self_test() -> int:
         _base_layer("image", src="media://pending", width=10, height=10)]}]}
     cases.append(("media:// src valid-with-warning", media_doc, True))
 
+    # ---- text weight: write contract v3 (fontWeight, runs, fontStyle keyword mirror) ----
+    def _text_doc(**fields: Any) -> dict[str, Any]:
+        style = {"text": "Hola mundo", "fontSize": 48, "fill": "#0c1719", "width": 600,
+                 "fontFamily": '"Brand Sans", sans-serif'}
+        style.update(fields)
+        layer = _base_layer("text", **style)
+        return {"version": 1, "pages": [{"id": "p", "name": "p", "layers": [layer]}]}
+
+    # Legacy keyword fontStyle without fontWeight stays valid (old documents are not refused).
+    cases.append(("legacy keyword fontStyle without fontWeight valid",
+                  _text_doc(fontStyle="bold"), True))
+    cases.append(("fontWeight 900 with bold mirror valid",
+                  _text_doc(fontWeight=900, fontStyle="bold"), True))
+    cases.append(("fontWeight 700 with italic bold mirror valid",
+                  _text_doc(fontWeight=700, fontStyle="italic bold"), True))
+    cases.append(("fontWeight 400 with italic mirror valid",
+                  _text_doc(fontWeight=400, fontStyle="italic"), True))
+    cases.append(("runs with numeric run weights valid",
+                  _text_doc(fontWeight=400, fontStyle="normal",
+                            runs=[{"start": 0, "end": 4, "fontWeight": 900},
+                                  {"start": 5, "end": 10}]), True))
+    # Defect: a string weight ("900") is accepted; the editor reads it, the API refuses the save.
+    cases.append(("string fontWeight rejected",
+                  _text_doc(fontWeight="900", fontStyle="bold"), False))
+    # Defect: a boolean weight is accepted (bool is an int in Python).
+    cases.append(("boolean fontWeight rejected",
+                  _text_doc(fontWeight=True, fontStyle="normal"), False))
+    # Defect: a weight outside the editor's 100-900 steps is accepted.
+    cases.append(("fontWeight 950 rejected", _text_doc(fontWeight=950, fontStyle="bold"), False))
+    cases.append(("fontWeight 450 rejected", _text_doc(fontWeight=450, fontStyle="normal"), False))
+    # Defect: a present null weight is dropped silently instead of refused.
+    cases.append(("null fontWeight rejected", _text_doc(fontWeight=None, fontStyle="normal"), False))
+    # Defect: a numeric fontStyle is accepted (the legacy form, never written).
+    cases.append(("numeric fontStyle without fontWeight rejected",
+                  _text_doc(fontStyle="900"), False))
+    cases.append(("numeric fontStyle with fontWeight rejected",
+                  _text_doc(fontWeight=900, fontStyle="900"), False))
+    # Defect: a fontStyle mirror that disagrees with fontWeight is accepted.
+    cases.append(("mirror without bold for 700 rejected",
+                  _text_doc(fontWeight=700, fontStyle="normal"), False))
+    cases.append(("mirror with bold for 400 rejected",
+                  _text_doc(fontWeight=400, fontStyle="bold"), False))
+    # Defect: runs present but not an array are accepted.
+    cases.append(("runs not array rejected", _text_doc(runs="0-4 bold"), False))
+    # Defect: a run with a string weight or an out-of-set weight is accepted.
+    cases.append(("run string fontWeight rejected",
+                  _text_doc(runs=[{"start": 0, "end": 4, "fontWeight": "600"}]), False))
+    cases.append(("run fontWeight 1000 rejected",
+                  _text_doc(runs=[{"start": 0, "end": 4, "fontWeight": 1000}]), False))
+
+    # ---- text font stack: the registered stack from list_brand_fonts, or an editor system stack ----
+    # Defect: a bare brand family has no generic fallback; the editor paints it, but the server
+    # render path depended on the exact registered stack, so agents must write that stack.
+    cases.append(("bare brand family refused", _text_doc(fontFamily="polymath-display"), False))
+    # Defect: the display name (family_name) is taken as a font key.
+    cases.append(("display name refused", _text_doc(fontFamily="Polymath Display"), False))
+    # Defect: a stack that does not end in a generic family is accepted.
+    cases.append(("stack without generic fallback refused",
+                  _text_doc(fontFamily='"polymath-display", Georgia'), False))
+    # Defect: a quoted generic keyword is taken as a fallback; CSS reads it as a family name.
+    cases.append(("quoted generic keyword refused",
+                  _text_doc(fontFamily='"polymath-display", "sans-serif"'), False))
+    # Defect: a run's bare brand family is accepted (runs paint their own family).
+    cases.append(("run bare brand family refused",
+                  _text_doc(runs=[{"start": 0, "end": 4, "fontFamily": "polymath-display"}]), False))
+    # Guard: the registered brand stack, with one or two families before a generic, stays valid.
+    cases.append(("brand stack with sans-serif accepted",
+                  _text_doc(fontFamily='"polymath-display", sans-serif'), True))
+    cases.append(("brand stack with Georgia and serif accepted",
+                  _text_doc(fontFamily='"cormorant-garamond", Georgia, serif'), True))
+    # Guard: quote style of the brand family is not a defect signal.
+    cases.append(("single-quoted brand stack accepted",
+                  _text_doc(fontFamily="'polymath-display', serif"), True))
+    cases.append(("default text stack accepted", _text_doc(fontFamily="Geist Mono, monospace"), True))
+    cases.append(("editor local system stack accepted",
+                  _text_doc(fontFamily="Courier New, monospace"), True))
+    cases.append(("run brand stack accepted",
+                  _text_doc(runs=[{"start": 0, "end": 4,
+                                   "fontFamily": '"polymath-display", sans-serif'}]), True))
+
     failures: list[str] = []
     for name, doc, expect_valid in cases:
         report = validate_design_document(doc)
@@ -917,6 +1241,19 @@ def _run_self_test() -> int:
     media_report = validate_design_document(media_doc)
     if not any(w["code"] == "SRC_PLACEHOLDER" for w in media_report.warnings):
         failures.append("media:// src did not raise SRC_PLACEHOLDER warning")
+
+    # Defect: a string weight is refused without telling the agent to convert it to a number
+    # (the API tolerates "900"; this validator refuses it, so the refusal must be actionable).
+    string_report = validate_design_document(_text_doc(fontWeight="900", fontStyle="bold"))
+    if not any(e["path"].endswith(".fontWeight") and "convert" in e["expected"]
+               for e in string_report.errors):
+        failures.append("string fontWeight refusal does not tell the agent to convert it to a number")
+
+    # Defect: a bare brand family refusal must name its path and point to the list_brand_fonts stack.
+    stack_report = validate_design_document(_text_doc(fontFamily="polymath-display"))
+    if not any(e["code"] == "TEXT_FONT_STACK" and e["path"].endswith(".fontFamily")
+               and "list_brand_fonts" in e["expected"] for e in stack_report.errors):
+        failures.append("bare brand family refusal does not name the path and list_brand_fonts")
 
     # ---- layout lint fixtures (all warnings-only: documents stay VALID) ----------
 
@@ -998,6 +1335,70 @@ def _run_self_test() -> int:
     unlinted = validate_design_document(_page(frame, poking), layout_lint=False)
     if any(w["code"].startswith("LAYOUT_") for w in unlinted.warnings):
         failures.append("layout_lint=False still produced LAYOUT_* warnings")
+
+    # ---- component upsert arguments (CLI path; mirror componentTypedPayload) ---------
+    import contextlib
+    import io
+    import os
+    import tempfile
+
+    def _cli(doc: Any, *extra: str) -> tuple[int, dict]:
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as fh:
+            json.dump(doc, fh)
+            path = fh.name
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out):
+                code = main(["--design-document", path, "--brand-id", "b", "--title", "Insignia",
+                             "--no-layout-lint", *extra])
+        finally:
+            os.unlink(path)
+        return code, json.loads(out.getvalue())
+
+    component_doc = {"version": 1, "pages": [{"id": "p1", "name": "Página 1", "layers": [
+        _base_layer("frame", id="root", width=320, height=180, fill="transparent"),
+        _base_layer("text", id="t", parentId="root", text="Hola", fontSize=24, fill="#000",
+                    width=200, fontFamily='"B", sans-serif')]}]}
+    # Defect: a component upsert built by hand misses one of the four keys the API requires.
+    code, out = _cli(component_doc, "--dimension-key", "component")
+    payload = (out.get("upsert_arguments") or {}).get("typed_payload") or {}
+    if code != 0 or payload.get("kind") != COMPONENT_PAYLOAD_KIND \
+            or payload.get("root_layer_id") != "root" \
+            or payload.get("duration_seconds") != DEFAULT_PAGE_DURATION \
+            or not str(payload.get("snapshot_hash", "")).startswith("mcp-") \
+            or payload.get("component_document") != component_doc \
+            or payload.get("component_name") != "Insignia":
+        failures.append(f"component upsert_arguments wrong: {out}")
+    # Defect: the label must change when the document changes (instances read it as a version).
+    changed = json.loads(json.dumps(component_doc))
+    changed["pages"][0]["layers"][1]["text"] = "Chao"
+    _, out2 = _cli(changed, "--dimension-key", "component")
+    if (out2.get("upsert_arguments") or {}).get("typed_payload", {}).get("snapshot_hash") == payload.get("snapshot_hash"):
+        failures.append("snapshot_hash did not change with the document")
+    # Defect: a root that is not a frame of the first page opens as a corrupt component.
+    code, out = _cli(component_doc, "--dimension-key", "component", "--root-layer-id", "t")
+    if code != 1 or not any(e["code"] == "COMPONENT_ROOT" for e in out.get("errors", [])):
+        failures.append(f"non-frame root not refused: {out}")
+    two_frames = {"version": 1, "pages": [{"id": "p1", "name": "p", "layers": [
+        _base_layer("frame", id="a", width=10, height=10, fill="#fff"),
+        _base_layer("frame", id="b", width=10, height=10, fill="#fff")]}]}
+    code, out = _cli(two_frames, "--dimension-key", "component")
+    if code != 1 or not any(e["code"] == "COMPONENT_ROOT" for e in out.get("errors", [])):
+        failures.append(f"ambiguous root not refused: {out}")
+    # Defect: duration 0 is refused by the API and by the editor loader.
+    code, out = _cli(component_doc, "--dimension-key", "component", "--duration-seconds", "0")
+    if code != 1 or not any(e["code"] == "COMPONENT_DURATION" for e in out.get("errors", [])):
+        failures.append(f"zero duration not refused: {out}")
+    # Defect: replacing a document without its revision is refused by the API.
+    code, out = _cli(component_doc, "--dimension-key", "component", "--brand-center-item-id", "i",
+                     "--expected-document-revision", "r1")
+    args_out = out.get("upsert_arguments") or {}
+    if args_out.get("expected_document_revision") != "r1" or args_out.get("brand_center_item_id") != "i":
+        failures.append(f"edit path lost expected_document_revision: {out}")
+    # Guard: the design path keeps its envelope.
+    code, out = _cli(_valid_document())
+    if (out.get("upsert_arguments") or {}).get("typed_payload", {}).get("kind") != "design_document":
+        failures.append(f"design envelope changed: {out}")
 
     # Layer-type coverage: every known type must have a branch (guards drift).
     covered = LAYER_TYPES

@@ -6,13 +6,13 @@
   },
   "metadata": {
     "description": "Plugin de operación de Irrumpe para Claude Code y Codex.",
-    "version": "1.2.4"
+    "version": "1.3.0"
   },
   "plugins": [
     {
       "name": "irrumpe-os",
       "source": "./",
-      "version": "1.2.4",
+      "version": "1.3.0",
       "homepage": "https://irrumpe.realestodo.com",
       "repository": "https://github.com/realestodo/irrumpe",
       "description": "Operador de Irrumpe conectado a su MCP: una skill de operación, onboarding de marca y adaptador de comando para Claude Code.",
